@@ -5,12 +5,12 @@ use anyhow::Result;
 use p2p_game_engine::{GameEvent, GameRoom, Iroh};
 use std::time::Duration;
 use tempfile::tempdir;
-use tokio::sync::mpsc; // Use your crate's name
+use tokio::sync::mpsc;
 
 async fn await_event(
     event: &mut mpsc::Receiver<GameEvent<TestGame>>,
 ) -> Result<GameEvent<TestGame>> {
-    let duration = Duration::from_secs(2); // timeout for events
+    let duration = Duration::from_secs(2);
     tokio::time::timeout(duration, event.recv())
         .await?
         .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
@@ -20,7 +20,6 @@ async fn await_event(
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
 
-    // Host creates a new room
     println!("Creating Host Room");
     let host_dir = tempdir()?;
     let host_iroh = Iroh::new(host_dir.path().to_path_buf()).await?;
@@ -29,7 +28,6 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let ticket_string = ticket.to_string();
     println!("Host Ticket: {}", &ticket_string);
 
-    // Client joins the room
     println!("Creating Client Room");
     let client_dir = tempdir()?;
     let client_iroh = Iroh::new(client_dir.path().to_path_buf()).await?;
@@ -68,6 +66,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
             _ => panic!("Client received wrong event type during lobby phase: {event:?}"),
         }
     }
+
     // --- GAME START ---
     println!("Starting Game");
 
