@@ -25,14 +25,13 @@ impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
         let mut sub = self.doc.subscribe().await?;
         let (sender, receiver) = mpsc::channel(32); // Event channel for the UI
 
-        // Clone all necessary state for the async task
         let doc = self.doc.clone();
         let author = self.author.clone();
         let logic = self.logic.clone();
         let is_host = self.is_host;
         let iroh = self.iroh.clone();
 
-        // This is our state. Only the host uses this authoritatively.
+        // host state
         let mut current_players: PlayerMap = HashMap::new();
         let mut current_state: Option<G::GameState> = None;
 
@@ -151,7 +150,7 @@ impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
                     match iroh.get_content_as::<AppState>(&entry).await {
                         Ok(app_state) => {
                             // If the state is InGame and we're the host, we need to create
-                            // the initial state. (Handling this is shown in the next section)
+                            // the initial state.
                             sender
                                 .send(GameEvent::AppStateChanged(app_state))
                                 .await

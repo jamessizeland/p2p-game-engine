@@ -23,15 +23,12 @@ impl Iroh {
 
         let key = load_secret_key(path.clone().join("keypair")).await?;
 
-        // create endpoint
         let endpoint = iroh::Endpoint::builder().secret_key(key).bind().await?;
 
-        // add iroh gossip
         let gossip = Gossip::builder().spawn(endpoint.clone());
 
         let blobs = FsStore::load(&path).await?;
 
-        // add docs
         let docs = Docs::persistent(path)
             .spawn(endpoint.clone(), (*blobs).clone(), gossip.clone())
             .await?;
@@ -52,12 +49,10 @@ impl Iroh {
         })
     }
 
-    // A helper to get the content bytes from an entry
     async fn get_entry_bytes(&self, entry: &iroh_docs::sync::Entry) -> Result<bytes::Bytes> {
         Ok(self.blobs().get_bytes(entry.content_hash()).await?)
     }
 
-    // A helper to deserialize content from an entry
     pub async fn get_content_as<'a, T: DeserializeOwned>(
         &self,
         entry: &'a iroh_docs::sync::Entry,

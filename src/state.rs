@@ -2,7 +2,7 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-// --- Key Prefixes (as constants) ---
+// --- Key Prefixes ---
 pub const KEY_APP_STATE: &[u8] = b"app_state";
 pub const KEY_HOST_ID: &[u8] = b"host_id";
 pub const KEY_PLAYERS: &[u8] = b"players";
@@ -16,7 +16,6 @@ pub struct PlayerInfo {
     pub name: String,
 }
 
-// Using a type alias for the player list
 pub type PlayerMap = HashMap<EndpointId, PlayerInfo>;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
