@@ -5,10 +5,12 @@ use iroh_docs::store::Query;
 
 impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
     /// Announce our presence when joining
-    pub async fn announce_presence(&self, name: String) -> Result<()> {
+    pub async fn announce_presence(&self, name: &str) -> Result<()> {
         let join_key = format!("{}{}", std::str::from_utf8(PREFIX_JOIN)?, self.id);
 
-        let payload = PlayerInfo { name };
+        let payload = PlayerInfo {
+            name: name.to_string(),
+        };
         let bytes = postcard::to_stdvec(&payload)?;
 
         self.doc

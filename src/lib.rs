@@ -3,6 +3,7 @@ mod logic;
 mod room;
 mod state;
 
+pub use iroh::Iroh;
 pub use logic::GameLogic;
 pub use room::{GameEvent, GameRoom};
 pub use state::*;
