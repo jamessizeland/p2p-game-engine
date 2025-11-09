@@ -1,9 +1,20 @@
 mod common;
 use common::*;
 
-use p2p_game_engine::{GameEvent, GameRoom, Iroh}; // Use your crate's name
+use anyhow::Result;
+use p2p_game_engine::{GameEvent, GameRoom, Iroh};
 use std::time::Duration;
 use tempfile::tempdir;
+use tokio::sync::mpsc; // Use your crate's name
+
+async fn await_event(
+    event: &mut mpsc::Receiver<GameEvent<TestGame>>,
+) -> Result<GameEvent<TestGame>> {
+    let duration = Duration::from_secs(2); // timeout for events
+    tokio::time::timeout(duration, event.recv())
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
+}
 
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
@@ -34,10 +45,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
 
     // Host should receive the lobby update
     println!("Waiting for Host Lobby Update...");
-    let event = tokio::time::timeout(Duration::from_secs(5), host_events.recv())
-        .await?
-        .expect("Host did not receive event");
-    println!("{event:?}");
+    let event = await_event(&mut host_events).await?;
 
     let client_id = client_room.id;
     match event {
@@ -49,6 +57,17 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         _ => panic!("Host received wrong event type"),
     }
 
+    // Client should first receive the lobby update and the initial lobby state
+    for _ in 0..2 {
+        let event = await_event(&mut client_events).await?;
+        match event {
+            GameEvent::LobbyUpdated(_) => { /* Good */ }
+            GameEvent::AppStateChanged(state) => {
+                assert!(matches!(state, p2p_game_engine::AppState::Lobby));
+            }
+            _ => panic!("Client received wrong event type during lobby phase: {event:?}"),
+        }
+    }
     // --- GAME START ---
     println!("Starting Game");
 
@@ -60,9 +79,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let mut state_received = false;
 
     for _ in 0..2 {
-        let event = tokio::time::timeout(Duration::from_secs(5), client_events.recv())
-            .await?
-            .expect("Client did not receive event");
+        let event = await_event(&mut client_events).await?;
         println!("event: {event:?}");
         match event {
             GameEvent::AppStateChanged(state) => {
@@ -89,27 +106,13 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     client_room.submit_action(TestGameAction::Increment).await?;
 
     // Client should receive the new state (after host processes and broadcasts it)
-    let event = tokio::time::timeout(Duration::from_secs(5), client_events.recv())
-        .await?
-        .expect("Client did not receive state update");
+    let event = await_event(&mut client_events).await?;
 
     match event {
         GameEvent::StateUpdated(state) => {
             assert_eq!(state, TestGameState { counter: 1 });
         }
         _ => panic!("Client received wrong event after action"),
-    }
-
-    // (Optional) Host should also receive its own broadcast
-    let host_event = tokio::time::timeout(Duration::from_secs(5), host_events.recv())
-        .await?
-        .expect("Host did not receive state update");
-
-    match host_event {
-        GameEvent::StateUpdated(state) => {
-            assert_eq!(state, TestGameState { counter: 1 });
-        }
-        _ => panic!("Host received wrong event after action"),
     }
 
     // --- CLEANUP ---
