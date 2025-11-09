@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::PlayerMap;
 
 /// Generic Trait for p2p turn based games.
-pub trait GameLogic {
+pub trait GameLogic: Debug {
     type GameState: Serialize + DeserializeOwned + Clone + Send;
     type GameAction: Serialize + DeserializeOwned + Clone + Send;
     type PlayerRole: Serialize + DeserializeOwned + Clone + Send;
