@@ -2,7 +2,7 @@ use crate::state::*;
 use crate::{GameLogic, GameRoom};
 use anyhow::Result;
 
-impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
+impl<G: GameLogic> GameRoom<G> {
     /// Send a chat message
     pub async fn send_chat(&self, message: String) -> Result<()> {
         let timestamp = std::time::SystemTime::now()

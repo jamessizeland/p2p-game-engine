@@ -55,6 +55,13 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         _ => panic!("Host received wrong event type"),
     }
 
+    // Host can also query the state directly
+    let players = host_room.get_players().await?.unwrap();
+    assert_eq!(players.len(), 1);
+    assert!(players.contains_key(&client_id));
+    assert_eq!(players.get(&client_id).unwrap().name, client_name);
+    println!("Host direct query successful.");
+
     // Client should first receive the lobby update and the initial lobby state
     for _ in 0..2 {
         let event = await_event(&mut client_events).await?;
@@ -66,6 +73,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
             _ => panic!("Client received wrong event type during lobby phase: {event:?}"),
         }
     }
+    // Client can also query the state directly
+    let app_state = client_room.get_app_state().await?.unwrap();
+    assert!(matches!(app_state, p2p_game_engine::AppState::Lobby));
+    println!("Client direct query successful.");
 
     // --- GAME START ---
     println!("Starting Game");
@@ -98,6 +109,11 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         "Client did not receive all start events"
     );
 
+    // We can also query the state directly now
+    let initial_state = client_room.get_game_state().await?.unwrap();
+    assert_eq!(initial_state, TestGameState { counter: 0 });
+    println!("Client direct query of initial game state successful.");
+
     // --- ACTION PHASE ---
     println!("Submitting Action");
 
@@ -113,6 +129,11 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         }
         _ => panic!("Client received wrong event after action"),
     }
+
+    // And we can query the final state
+    let final_state = client_room.get_game_state().await?.unwrap();
+    assert_eq!(final_state, TestGameState { counter: 1 });
+    println!("Client direct query of final game state successful.");
 
     // --- CLEANUP ---
     host_handle.abort();

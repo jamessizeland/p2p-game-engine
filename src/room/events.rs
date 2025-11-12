@@ -19,7 +19,7 @@ pub enum GameEvent<G: GameLogic> {
     Error(String),
 }
 
-impl<G: GameLogic + Send + Sync + 'static + Clone> GameRoom<G> {
+impl<G: GameLogic + Clone> GameRoom<G> {
     pub async fn start_event_loop(
         &self,
     ) -> Result<(tokio::task::JoinHandle<()>, mpsc::Receiver<GameEvent<G>>)> {
@@ -75,7 +75,7 @@ impl<G: GameLogic + Send + Sync + 'static + Clone> GameRoom<G> {
     }
 }
 
-async fn process_entry<G: GameLogic + Send + Sync + 'static>(
+async fn process_entry<G: GameLogic>(
     entry: &Entry,
     room: &GameRoom<G>,
     current_players: &mut PlayerMap,
@@ -137,11 +137,11 @@ async fn process_entry<G: GameLogic + Send + Sync + 'static>(
             match iroh.get_content_as::<G::GameAction>(&entry).await {
                 Ok(action) => {
                     // Apply the game logic
-                    let state_to_use = current_state.as_ref().unwrap(); // Safe due to check
-                    match logic.apply_action(state_to_use, &player_id, &action) {
-                        Ok(new_state) => {
+                    let state_to_update = current_state.as_mut().unwrap(); // Safe due to check
+                    match logic.apply_action(state_to_update, &player_id, &action) {
+                        Ok(()) => {
                             // Broadcast the new authoritative state
-                            let state_bytes = postcard::to_stdvec(&new_state).unwrap();
+                            let state_bytes = postcard::to_stdvec(state_to_update).unwrap();
                             doc.set_bytes(author.clone(), KEY_GAME_STATE.to_vec(), state_bytes)
                                 .await
                                 .ok();

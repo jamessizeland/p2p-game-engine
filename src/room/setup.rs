@@ -6,7 +6,7 @@ use iroh_docs::{DocTicket, api::protocol::ShareMode};
 use std::str::FromStr as _;
 use std::sync::Arc;
 
-impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
+impl<G: GameLogic> GameRoom<G> {
     /// HOST: Creates a new game lobby.
     pub async fn host(iroh: Iroh, logic: G) -> Result<(Self, DocTicket)> {
         let author = iroh.docs().author_create().await?;

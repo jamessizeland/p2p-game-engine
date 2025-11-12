@@ -1,6 +1,7 @@
 mod actions;
 mod chat;
 mod events;
+mod queries;
 mod setup;
 
 use crate::{GameLogic, iroh::Iroh};
