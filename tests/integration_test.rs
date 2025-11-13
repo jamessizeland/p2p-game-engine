@@ -109,7 +109,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         "Client did not receive all start events"
     );
 
-    // We can also query the state directly now
+    // Query the state directly
     let initial_state = client_room.get_game_state().await?.unwrap();
     assert_eq!(initial_state, TestGameState { counter: 0 });
     println!("Client direct query of initial game state successful.");
@@ -130,7 +130,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         _ => panic!("Client received wrong event after action"),
     }
 
-    // And we can query the final state
+    // Query the final state
     let final_state = client_room.get_game_state().await?.unwrap();
     assert_eq!(final_state, TestGameState { counter: 1 });
     println!("Client direct query of final game state successful.");
