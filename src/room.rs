@@ -17,6 +17,6 @@ pub struct GameRoom<G: GameLogic> {
     pub(self) doc: Doc,
     pub(self) author: AuthorId,
     pub(self) logic: Arc<G>,
-    pub(self) is_host: bool,
+    pub is_host: bool,
     pub id: EndpointId,
 }
