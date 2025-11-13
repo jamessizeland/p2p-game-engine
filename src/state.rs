@@ -29,5 +29,6 @@ pub struct ChatMessage {
 pub enum AppState {
     Lobby,
     InGame,
+    Paused,
     Finished,
 }

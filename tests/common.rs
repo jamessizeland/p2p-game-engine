@@ -49,16 +49,14 @@ impl GameLogic for TestGame {
 
     fn apply_action(
         &self,
-        current_state: &Self::GameState,
+        current_state: &mut Self::GameState,
         _player_id: &EndpointId,
         action: &Self::GameAction,
-    ) -> Result<Self::GameState, Self::GameError> {
+    ) -> Result<(), Self::GameError> {
         match action {
             TestGameAction::Increment => {
-                let new_state = TestGameState {
-                    counter: current_state.counter + 1,
-                };
-                Ok(new_state)
+                current_state.counter += 1;
+                Ok(())
             }
         }
     }

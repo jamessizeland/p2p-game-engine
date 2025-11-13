@@ -3,7 +3,7 @@ use crate::{GameLogic, GameRoom};
 use anyhow::Result;
 use iroh_docs::store::Query;
 
-impl<G: GameLogic + Send + Sync + 'static> GameRoom<G> {
+impl<G: GameLogic> GameRoom<G> {
     /// Announce our presence when joining
     pub async fn announce_presence(&self, name: &str) -> Result<()> {
         let join_key = format!("{}{}", std::str::from_utf8(PREFIX_JOIN)?, self.id);
