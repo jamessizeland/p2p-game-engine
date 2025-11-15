@@ -25,7 +25,7 @@ pub struct ChatMessage {
     pub timestamp: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
 pub enum AppState {
     Lobby,
     InGame,

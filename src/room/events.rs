@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 pub enum GameEvent<G: GameLogic> {
     LobbyUpdated(PlayerMap),
-    GameStarted(G::GameState),
+    GameStarted(G::GameState, AppState),
     StateUpdated(G::GameState),
     AppStateChanged(AppState),
     ChatReceived(ChatMessage),
@@ -94,6 +94,15 @@ async fn process_entry<G: GameLogic>(
     // --- HOST-ONLY LOGIC ---
     if *is_host {
         if key.starts_with(PREFIX_JOIN) {
+            // Don't allow new players to be added to the official player list if the game is running.
+            // They can still join as observers. We check the AppState from the doc.
+            if let Ok(Some(app_state)) = room.get_app_state().await {
+                if app_state == AppState::InGame {
+                    // The game has started. New joiners are observers and won't be added to the KEY_PLAYERS map.
+                    // They will still receive all other events.
+                    return Ok(None);
+                }
+            }
             let node_id = String::from_utf8_lossy(&key[PREFIX_JOIN.len()..]).to_string();
 
             // Get the PlayerInfo payload

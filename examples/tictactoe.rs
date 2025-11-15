@@ -124,23 +124,33 @@ impl GameLogic for TicTacToeLogic {
     type GameError = GameError;
 
     fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
+        // The first two players become X and O. Everyone else is an observer.
         let mut roles = HashMap::new();
-        let mut x_assigned = false;
-        for player_id in players.keys() {
-            if !x_assigned {
-                roles.insert(*player_id, PlayerRole::X);
-                x_assigned = true;
-            } else {
-                roles.insert(*player_id, PlayerRole::O);
-                // Only two players, X and O. Subsequent joiners will be observers.
-                // Our current lobby logic adds everyone, so we'll just cap it here.
-                break;
+        let mut player_roles = [PlayerRole::X, PlayerRole::O].into_iter();
+
+        for (player_id, _player_info) in players {
+            if let Some(role) = player_roles.next() {
+                roles.insert(*player_id, role);
             }
+        }
+
+        // Assign remaining players as observers
+        for player_id in players.keys() {
+            roles.entry(*player_id).or_insert(PlayerRole::Observer);
         }
         roles
     }
 
     fn initial_state(&self, roles: &HashMap<EndpointId, Self::PlayerRole>) -> Self::GameState {
+        // Ensure we have both an X and an O before starting.
+        let has_x = roles.values().any(|&r| r == PlayerRole::X);
+        let has_o = roles.values().any(|&r| r == PlayerRole::O);
+
+        if !(has_x && has_o) {
+            // This is a logic error. The host UI should prevent this.
+            panic!("Attempted to start a Tic-Tac-Toe game without two players (X and O).");
+        }
+
         TicTacToeState {
             board: [Cell::Empty; 9],
             status: GameStatus::Ongoing,
@@ -246,7 +256,7 @@ async fn main() -> Result<()> {
     let (room, my_role): (GameRoom<TicTacToeLogic>, PlayerRole) = match cli.command {
         Commands::Host => {
             let (room, ticket) = GameRoom::host(iroh, TicTacToeLogic).await?;
-            println!("Game hosted! Ticket: {}", ticket);
+            println!("Game hosted! Your ID: {} Ticket: {}", room.id, ticket);
             println!("Your role is X. Waiting for player O to join...");
             println!("Once player O has joined, type 'start' to begin the game.");
             (room, PlayerRole::X)
@@ -255,7 +265,7 @@ async fn main() -> Result<()> {
             let room = GameRoom::join(iroh, TicTacToeLogic, ticket).await?;
             // We don't know our role until the game starts and roles are assigned.
             // For now, we can assume we might be a player or an observer.
-            println!("Joined lobby. Announcing presence...");
+            println!("Joined lobby. Your ID: {}. Announcing presence...", room.id);
             room.announce_presence("NewPlayer").await?;
             println!("Waiting for the host to start the game...");
             (room, PlayerRole::Observer) // Tentative role
@@ -265,7 +275,7 @@ async fn main() -> Result<()> {
     let mut my_final_role = my_role;
 
     // --- Event Loop ---
-    let (_event_handle, mut events) = room.start_event_loop().await?;
+    let (event_handle, mut events) = room.start_event_loop().await?;
     let mut stdin = tokio_util::io::ReaderStream::new(tokio::io::stdin());
 
     loop {
@@ -308,19 +318,27 @@ async fn main() -> Result<()> {
             // Handle game events
             Some(event) = events.recv() => {
                 match event {
-                    GameEvent::LobbyUpdated(players) => {
+                    GameEvent::LobbyUpdated(mut players) => {
+                        // Don't show the host in the lobby list for clients
+                        if !room.is_host {
+                            players.retain(|id, _| *id != room.id);
+                        }
                         println!("\nLobby updated. Players: {}", players.len());
                     }
-                    GameEvent::StateUpdated(state) | GameEvent::GameStarted(state) => {
+                    GameEvent::GameStarted(state, _app_state) => {
                         // Determine our role if we don't know it yet
-                        if my_final_role == PlayerRole::Observer {
-                             if let Some(role) = state.roles.get(&room.id) {
-                                my_final_role = *role;
-                                println!("\nGame started! Your role is: {}", my_final_role);
-                            }
+                        if let Some(role) = state.roles.get(&room.id) {
+                            my_final_role = *role;
+                            println!("\nGame started! Your role is: {}", my_final_role);
+                        } else {
+                            // We are not in the roles map, so we are an observer.
+                            my_final_role = PlayerRole::Observer;
+                            println!("\nGame started! You are an observer.");
                         }
                         print_board(&state);
-                    }
+                    },
+                    GameEvent::StateUpdated(state) => print_board(&state),
+
                     GameEvent::ChatReceived(msg) => {
                         let from = if msg.from == room.id { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
                         println!("\n[Chat] {}: {}", from, msg.message);
@@ -333,4 +351,6 @@ async fn main() -> Result<()> {
             }
         }
     }
+    event_handle.abort();
+    Ok(())
 }

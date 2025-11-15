@@ -44,10 +44,21 @@ impl<G: GameLogic> GameRoom<G> {
         let players_entry = self
             .doc
             .get_one(Query::single_latest_per_key().key_exact(KEY_PLAYERS))
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("No players in lobby"))?;
+            .await?;
 
-        let players: PlayerMap = self.iroh.get_content_as(&players_entry).await?;
+        let mut players: PlayerMap = if let Some(entry) = players_entry {
+            self.iroh.get_content_as(&entry).await?
+        } else {
+            PlayerMap::new()
+        };
+
+        // Manually add the host to the player list for role assignment
+        players.insert(
+            self.id,
+            PlayerInfo {
+                name: "Host".to_string(),
+            },
+        );
 
         // 2. Call the user-defined logic to get roles and initial state
         let roles = self.logic.assign_roles(&players);
