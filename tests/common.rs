@@ -60,4 +60,11 @@ impl GameLogic for TestGame {
             }
         }
     }
+    fn start_conditions_met(
+        &self,
+        _players: &PlayerMap,
+        _current_state: &Self::GameState,
+    ) -> Result<(), Self::GameError> {
+        Ok(())
+    }
 }

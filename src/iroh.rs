@@ -75,7 +75,6 @@ impl Iroh {
     pub async fn get_content_bytes(&self, entry: &iroh_docs::sync::Entry) -> Result<Bytes> {
         Ok(self.blobs().get_bytes(entry.content_hash()).await?)
     }
-
     pub async fn get_content_as<'a, T: DeserializeOwned>(
         &self,
         entry: &'a iroh_docs::sync::Entry,

@@ -7,7 +7,8 @@ mod state;
 use crate::GameLogic;
 use anyhow::Result;
 use iroh::EndpointId;
-use iroh_docs::DocTicket;
+use iroh_docs::{DocTicket, Entry};
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 
@@ -20,6 +21,15 @@ pub struct GameRoom<G: GameLogic> {
     pub(self) state: StateData,
     /// Game logic
     pub(self) logic: Arc<G>,
+    pub(self) event_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+}
+
+impl<G: GameLogic> Drop for GameRoom<G> {
+    fn drop(&mut self) {
+        if let Some(handle) = self.event_handle.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl<G: GameLogic> Deref for GameRoom<G> {
@@ -39,21 +49,33 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn ticket(&self) -> &DocTicket {
         &self.ticket
     }
+    /// Convert entry to known data type
+    pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
+        self.iroh.get_content_as(entry).await
+    }
     /// Create a new game room
     pub async fn create(logic: G, save_path: Option<PathBuf>) -> Result<Self> {
         let logic = Arc::new(logic);
         let state = StateData::new(save_path, None).await?;
 
         // Host immediately sets the initial lobby state and its own ID.
-        state.set_app_state(AppState::Lobby).await?;
-        state.claim_host();
-        Ok(GameRoom { state, logic })
+        state.set_app_state(&AppState::Lobby).await?;
+        state.claim_host().await?;
+        Ok(GameRoom {
+            state,
+            logic,
+            event_handle: None,
+        })
     }
     /// Join an existing game room
     pub async fn join(logic: G, save_path: Option<PathBuf>, ticket: String) -> Result<Self> {
         let logic = Arc::new(logic);
         let state = StateData::new(save_path, Some(ticket)).await?;
-        Ok(GameRoom { state, logic })
+        Ok(GameRoom {
+            state,
+            logic,
+            event_handle: None,
+        })
     }
     /// Start the Game
     pub async fn start_game(&self) -> Result<()> {
@@ -74,8 +96,8 @@ impl<G: GameLogic> GameRoom<G> {
         let initial_state: G::GameState = self.logic.initial_state(&roles);
 
         // Broadast the initial game state before setting the game to active.
-        self.set_game_state::<G>(initial_state).await?;
-        self.set_app_state(AppState::InGame).await?;
+        self.set_game_state::<G>(&initial_state).await?;
+        self.set_app_state(&AppState::InGame).await?;
         Ok(())
     }
 }
