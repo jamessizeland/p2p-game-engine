@@ -5,7 +5,7 @@ use bytes::Bytes;
 use iroh::SecretKey;
 use iroh::protocol::Router;
 use iroh_blobs::{ALPN as BLOBS_ALPN, BlobsProtocol, api::blobs::Blobs, store::fs::FsStore};
-use iroh_docs::{ALPN as DOCS_ALPN, AuthorId, protocol::Docs};
+use iroh_docs::{ALPN as DOCS_ALPN, AuthorId, NamespaceId, protocol::Docs};
 use iroh_gossip::{ALPN as GOSSIP_ALPN, net::Gossip};
 use serde::de::DeserializeOwned;
 use tokio::io::AsyncWriteExt;
@@ -49,7 +49,7 @@ impl Iroh {
     /// Retrieve or create an AuthorId
     ///
     /// Check if we have a saved AuthorId for this document to rejoin.
-    pub async fn setup_author(&self, doc_id: &str) -> Result<AuthorId> {
+    pub async fn setup_author(&self, doc_id: &NamespaceId) -> Result<AuthorId> {
         let author_path = self.path.join(format!("{}.author", doc_id));
         if author_path.exists()
             && let Ok(bytes) = tokio::fs::read(&author_path).await?.try_into()

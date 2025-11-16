@@ -1,43 +1,81 @@
 //! Game Room
 
-mod actions;
 mod chat;
 mod events;
-mod queries;
-mod setup;
+mod state;
 
-use crate::{GameLogic, iroh::Iroh};
+use crate::GameLogic;
+use anyhow::Result;
 use iroh::EndpointId;
-use iroh_docs::{AuthorId, api::Doc};
+use iroh_docs::DocTicket;
 use std::sync::Arc;
+use std::{ops::Deref, path::PathBuf};
 
 pub use events::GameEvent;
-pub use setup::{RoomBuilder, RoomEntry};
+pub use state::{AppState, PlayerInfo, PlayerMap, StateData};
 
 #[derive(Clone)]
 pub struct GameRoom<G: GameLogic> {
-    /// Networking interface
-    pub(self) iroh: Iroh,
     /// Persistent data store
-    pub(self) doc: Doc,
-    /// Document writer unique identifier
-    pub(self) author: AuthorId,
+    pub(self) state: StateData,
     /// Game logic
     pub(self) logic: Arc<G>,
-    /// Whether we are the host
-    is_host: bool,
-    /// Our location unique identifier
-    id: EndpointId,
+}
+
+impl<G: GameLogic> Deref for GameRoom<G> {
+    type Target = StateData;
+
+    fn deref(&self) -> &Self::Target {
+        &self.state
+    }
 }
 
 impl<G: GameLogic> GameRoom<G> {
     /// Get Iroh Network Endpoint ID
     pub fn id(&self) -> EndpointId {
-        self.id
+        self.my_id
     }
-    /// Is this gameroom instance hosting?
-    pub fn is_host(&self) -> bool {
-        // TODO we should be checking this from the document not from our local state, incase the host has migrated.
-        self.is_host
+    /// Read this room's join ticket
+    pub fn ticket(&self) -> &DocTicket {
+        &self.ticket
+    }
+    /// Create a new game room
+    pub async fn create(logic: G, save_path: Option<PathBuf>) -> Result<Self> {
+        let logic = Arc::new(logic);
+        let state = StateData::new(save_path, None).await?;
+
+        // Host immediately sets the initial lobby state and its own ID.
+        state.set_app_state(AppState::Lobby).await?;
+        state.claim_host();
+        Ok(GameRoom { state, logic })
+    }
+    /// Join an existing game room
+    pub async fn join(logic: G, save_path: Option<PathBuf>, ticket: String) -> Result<Self> {
+        let logic = Arc::new(logic);
+        let state = StateData::new(save_path, Some(ticket)).await?;
+        Ok(GameRoom { state, logic })
+    }
+    /// Start the Game
+    pub async fn start_game(&self) -> Result<()> {
+        if !self.is_host().await? {
+            return Err(anyhow::anyhow!("Only the host can start the game"));
+        }
+        // TODO add mechanism for getting and checking that all players are ready
+        if self.get_app_state().await? != AppState::Lobby {
+            return Err(anyhow::anyhow!("Game has already started"));
+        }
+        let players = self.get_players().await?.unwrap_or_default();
+
+        let current_state: G::GameState = self.get_game_state::<G>().await?;
+
+        self.logic.start_conditions_met(&players, &current_state)?;
+
+        let roles = self.logic.assign_roles(&players);
+        let initial_state: G::GameState = self.logic.initial_state(&roles);
+
+        // Broadast the initial game state before setting the game to active.
+        self.set_game_state::<G>(initial_state).await?;
+        self.set_app_state(AppState::InGame).await?;
+        Ok(())
     }
 }
