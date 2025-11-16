@@ -143,7 +143,7 @@ async fn process_entry<G: GameLogic>(
                     match room.logic.apply_action(state_to_update, &node_id, &action) {
                         Ok(()) => {
                             // Broadcast the new authoritative state
-                            room.set_game_state::<G>(state_to_update).await.ok();
+                            room.set_game_state(state_to_update).await.ok();
                         }
                         Err(e) => return Err(anyhow!("Invalid action from {}: {}", node_id, e)),
                     }

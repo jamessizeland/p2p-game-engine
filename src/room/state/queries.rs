@@ -2,7 +2,7 @@ use super::*;
 use crate::GameLogic;
 use anyhow::Result;
 
-impl StateData {
+impl<G: GameLogic> StateData<G> {
     /// Check the document to see if we are the host
     pub async fn is_host(&self) -> Result<bool> {
         if let Some(bytes) = self.get_bytes(KEY_HOST_ID).await? {
@@ -23,7 +23,7 @@ impl StateData {
     }
 
     /// Get Game State.
-    pub async fn get_game_state<G: GameLogic>(&self) -> Result<G::GameState> {
+    pub async fn get_game_state(&self) -> Result<G::GameState> {
         if let Some(bytes) = self.get_bytes(KEY_GAME_STATE).await? {
             Ok(postcard::from_bytes(&bytes)?)
         } else {
@@ -41,7 +41,7 @@ impl StateData {
     }
 }
 
-impl StateData {
+impl<G: GameLogic> StateData<G> {
     /// Query the state data for a particular key
     async fn get_bytes(&self, key: &[u8]) -> Result<Option<Bytes>> {
         let query = self

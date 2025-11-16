@@ -10,7 +10,7 @@ use iroh_docs::{DocTicket, Entry, api::protocol::ShareMode, store::Query};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, ops::Deref, path::PathBuf, str::FromStr as _};
 
-use crate::Iroh;
+use crate::{GameLogic, Iroh};
 
 // --- Key Prefixes ---
 pub(self) const KEY_APP_STATE: &[u8] = b"app_state";
@@ -27,6 +27,14 @@ pub(self) const PREFIX_PLAYER_READY: &[u8] = b"player_ready.";
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerInfo {
     pub name: String,
+}
+
+impl Into<PlayerInfo> for &str {
+    fn into(self) -> PlayerInfo {
+        PlayerInfo {
+            name: self.to_string(),
+        }
+    }
 }
 
 pub type PlayerMap = HashMap<EndpointId, PlayerInfo>;
@@ -50,22 +58,23 @@ pub enum AppState {
 
 /// Wrapper for the Iroh Document
 #[derive(Clone)]
-pub struct StateData {
+pub struct StateData<G: GameLogic> {
     doc: iroh_docs::api::Doc,
     pub(crate) author_id: iroh_docs::AuthorId,
     pub(crate) my_id: EndpointId,
     pub(crate) iroh: Iroh,
     pub(crate) ticket: DocTicket,
+    phantom: std::marker::PhantomData<G>,
 }
 
-impl Deref for StateData {
+impl<G: GameLogic> Deref for StateData<G> {
     type Target = iroh_docs::api::Doc;
     fn deref(&self) -> &Self::Target {
         &self.doc
     }
 }
 
-impl StateData {
+impl<G: GameLogic> StateData<G> {
     /// Create a new StateData instance
     pub async fn new(store_path: Option<PathBuf>, ticket: Option<String>) -> Result<Self> {
         let dir = store_path.unwrap_or(tempfile::tempdir()?.path().to_path_buf());
@@ -81,6 +90,7 @@ impl StateData {
                 my_id,
                 iroh,
                 ticket,
+                phantom: std::marker::PhantomData,
             })
         } else {
             let doc = iroh.docs().create().await?;
@@ -92,6 +102,7 @@ impl StateData {
                 my_id,
                 iroh,
                 ticket,
+                phantom: std::marker::PhantomData,
             })
         }
     }

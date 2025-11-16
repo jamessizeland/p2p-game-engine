@@ -4,4 +4,4 @@ mod room;
 
 pub use iroh::Iroh;
 pub use logic::GameLogic;
-pub use room::{GameEvent, GameRoom, PlayerInfo, PlayerMap};
+pub use room::{AppState, GameEvent, GameRoom, PlayerInfo, PlayerMap};

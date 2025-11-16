@@ -2,7 +2,7 @@ use super::*;
 use crate::{GameLogic, room::chat::ChatMessage};
 use anyhow::Result;
 
-impl StateData {
+impl<G: GameLogic> StateData<G> {
     /// Set the AppState.
     pub async fn set_app_state(&self, state: &AppState) -> Result<()> {
         let state = postcard::to_stdvec(&state)?;
@@ -10,7 +10,7 @@ impl StateData {
     }
 
     /// Set Game State.
-    pub async fn set_game_state<G: GameLogic>(&self, state: &G::GameState) -> Result<()> {
+    pub async fn set_game_state(&self, state: &G::GameState) -> Result<()> {
         let state = postcard::to_stdvec(state)?;
         self.set_bytes(KEY_GAME_STATE, &state).await
     }
@@ -50,14 +50,14 @@ impl StateData {
     }
 
     /// Announce that we have joined the room.
-    pub async fn announce_presence(&self, player: &super::PlayerInfo) -> Result<()> {
+    pub async fn announce_presence(&self, player: impl Into<super::PlayerInfo>) -> Result<()> {
         let join_key = format!("{}{}", std::str::from_utf8(PREFIX_JOIN)?, self.my_id);
-        let value = postcard::to_stdvec(&player)?;
+        let value = postcard::to_stdvec(&player.into())?;
         self.set_bytes(&join_key.into_bytes(), &value).await
     }
 
     /// Submit a game action.
-    pub async fn submit_action<G: GameLogic>(&self, action: G::GameAction) -> Result<()> {
+    pub async fn submit_action(&self, action: G::GameAction) -> Result<()> {
         // Key is "action.id" - this will overwrite previous actions,
         // which is fine as the host processes them sequentially.
         let action_key = format!("{}{}", std::str::from_utf8(PREFIX_ACTION)?, self.my_id);
@@ -74,7 +74,7 @@ impl StateData {
     }
 }
 
-impl StateData {
+impl<G: GameLogic> StateData<G> {
     /// Set the state data for a particular key.
     async fn set_bytes(&self, key: &[u8], value: &[u8]) -> Result<()> {
         self.doc

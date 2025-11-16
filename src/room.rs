@@ -18,7 +18,7 @@ pub use state::{AppState, PlayerInfo, PlayerMap, StateData};
 #[derive(Clone)]
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
-    pub(self) state: StateData,
+    pub(self) state: StateData<G>,
     /// Game logic
     pub(self) logic: Arc<G>,
     pub(self) event_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
@@ -33,7 +33,7 @@ impl<G: GameLogic> Drop for GameRoom<G> {
 }
 
 impl<G: GameLogic> Deref for GameRoom<G> {
-    type Target = StateData;
+    type Target = StateData<G>;
 
     fn deref(&self) -> &Self::Target {
         &self.state
@@ -68,7 +68,8 @@ impl<G: GameLogic> GameRoom<G> {
         })
     }
     /// Join an existing game room
-    pub async fn join(logic: G, save_path: Option<PathBuf>, ticket: String) -> Result<Self> {
+    pub async fn join(logic: G, ticket: String, save_path: Option<PathBuf>) -> Result<Self> {
+        // TODO establish that this ticket matches the game we expect.
         let logic = Arc::new(logic);
         let state = StateData::new(save_path, Some(ticket)).await?;
         Ok(GameRoom {
@@ -88,7 +89,7 @@ impl<G: GameLogic> GameRoom<G> {
         }
         let players = self.get_players().await?.unwrap_or_default();
 
-        let current_state: G::GameState = self.get_game_state::<G>().await?;
+        let current_state: G::GameState = self.get_game_state().await?;
 
         self.logic.start_conditions_met(&players, &current_state)?;
 
@@ -96,7 +97,7 @@ impl<G: GameLogic> GameRoom<G> {
         let initial_state: G::GameState = self.logic.initial_state(&roles);
 
         // Broadast the initial game state before setting the game to active.
-        self.set_game_state::<G>(&initial_state).await?;
+        self.set_game_state(&initial_state).await?;
         self.set_app_state(&AppState::InGame).await?;
         Ok(())
     }
