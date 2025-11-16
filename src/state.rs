@@ -1,3 +1,5 @@
+//! State information
+
 use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -10,6 +12,7 @@ pub const KEY_GAME_STATE: &[u8] = b"game_state";
 pub const PREFIX_JOIN: &[u8] = b"join_request.";
 pub const PREFIX_ACTION: &[u8] = b"action.";
 pub const PREFIX_CHAT: &[u8] = b"chat.";
+pub const KEY_HEARTBEAT: &[u8] = b"heartbeat";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlayerInfo {
