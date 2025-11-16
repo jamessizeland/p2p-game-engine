@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use iroh::EndpointId;
 use iroh_docs::{DocTicket, Entry, api::protocol::ShareMode, store::Query};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, ops::Deref, path::PathBuf, str::FromStr as _};
 
 use crate::{GameLogic, Iroh};
@@ -105,6 +105,11 @@ impl<G: GameLogic> StateData<G> {
                 phantom: std::marker::PhantomData,
             })
         }
+    }
+
+    /// Convert entry to known data type
+    pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
+        self.iroh.get_content_as(entry).await
     }
 }
 

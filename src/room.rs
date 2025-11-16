@@ -7,21 +7,20 @@ mod state;
 use crate::GameLogic;
 use anyhow::Result;
 use iroh::EndpointId;
-use iroh_docs::{DocTicket, Entry};
-use serde::de::DeserializeOwned;
+use iroh_docs::DocTicket;
 use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
+use tokio::sync::mpsc;
 
 pub use events::GameEvent;
 pub use state::{AppState, PlayerInfo, PlayerMap, StateData};
 
-#[derive(Clone)]
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
-    pub(self) state: StateData<G>,
+    pub(self) state: Arc<StateData<G>>,
     /// Game logic
     pub(self) logic: Arc<G>,
-    pub(self) event_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    pub(self) event_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl<G: GameLogic> Drop for GameRoom<G> {
@@ -49,34 +48,41 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn ticket(&self) -> &DocTicket {
         &self.ticket
     }
-    /// Convert entry to known data type
-    pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
-        self.iroh.get_content_as(entry).await
-    }
     /// Create a new game room
-    pub async fn create(logic: G, save_path: Option<PathBuf>) -> Result<Self> {
-        let logic = Arc::new(logic);
+    pub async fn create(
+        logic: G,
+        save_path: Option<PathBuf>,
+    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
         let state = StateData::new(save_path, None).await?;
 
         // Host immediately sets the initial lobby state and its own ID.
         state.set_app_state(&AppState::Lobby).await?;
         state.claim_host().await?;
-        Ok(GameRoom {
-            state,
-            logic,
+        let mut room = GameRoom {
+            state: Arc::new(state),
+            logic: Arc::new(logic),
             event_handle: None,
-        })
+        };
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
     }
     /// Join an existing game room
-    pub async fn join(logic: G, ticket: String, save_path: Option<PathBuf>) -> Result<Self> {
+    pub async fn join(
+        logic: G,
+        ticket: String,
+        save_path: Option<PathBuf>,
+    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
         // TODO establish that this ticket matches the game we expect.
-        let logic = Arc::new(logic);
         let state = StateData::new(save_path, Some(ticket)).await?;
-        Ok(GameRoom {
-            state,
-            logic,
+        let mut room = GameRoom {
+            state: Arc::new(state),
+            logic: Arc::new(logic),
             event_handle: None,
-        })
+        };
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
     }
     /// Start the Game
     pub async fn start_game(&self) -> Result<()> {
