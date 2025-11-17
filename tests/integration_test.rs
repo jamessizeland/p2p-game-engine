@@ -2,9 +2,11 @@ mod common;
 use common::*;
 
 use anyhow::Result;
-use p2p_game_engine::{GameEvent, GameRoom, Iroh};
+use p2p_game_engine::AppState;
+use p2p_game_engine::GameEvent;
+use p2p_game_engine::GameRoom;
+use std::path::Path;
 use std::time::Duration;
-use tempfile::tempdir;
 use tokio::sync::mpsc;
 
 async fn await_event(
@@ -19,20 +21,19 @@ async fn await_event(
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
+    let host_dir = Path::new("./temp/host/");
+    tokio::fs::create_dir_all(&host_dir).await?;
+    let client_dir = Path::new("./temp/client/");
+    tokio::fs::create_dir_all(&client_dir).await?;
 
-    println!("Creating Host Room");
-    let host_dir = tempdir()?;
-    let host_iroh = Iroh::new(host_dir.path().to_path_buf()).await?;
-    let (host_room, ticket) = GameRoom::host(host_iroh, TestGame).await?;
-    let (host_handle, mut host_events) = host_room.start_event_loop().await?;
-    let ticket_string = ticket.to_string();
+    println!("Setting up Host Room");
+    let (host_room, mut host_events) = GameRoom::create(TestGame, host_dir.to_path_buf()).await?;
+    let ticket_string = host_room.ticket().to_string();
     println!("Host Ticket: {}", &ticket_string);
 
-    println!("Creating Client Room");
-    let client_dir = tempdir()?;
-    let client_iroh = Iroh::new(client_dir.path().to_path_buf()).await?;
-    let client_room = GameRoom::join(client_iroh, TestGame, ticket_string).await?;
-    let (client_handle, mut client_events) = client_room.start_event_loop().await?;
+    println!("Setting up Client Room");
+    let (client_room, mut client_events) =
+        GameRoom::join(TestGame, ticket_string, client_dir.to_path_buf()).await?;
 
     // --- LOBBY PHASE ---
 
@@ -44,8 +45,8 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Host should receive the lobby update
     println!("Waiting for Host Lobby Update...");
     let event = await_event(&mut host_events).await?;
-
-    let client_id = client_room.id;
+    println!("Received Host Lobby Update: {event:?}");
+    let client_id = client_room.id();
     match event {
         GameEvent::LobbyUpdated(players) => {
             assert_eq!(players.len(), 1);
@@ -55,8 +56,11 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         _ => panic!("Host received wrong event type"),
     }
 
+    println!("Getting player map from host room...");
+
     // Host can also query the state directly
     let players = host_room.get_players().await?.unwrap();
+    println!("Players: {players:?}");
     assert_eq!(players.len(), 1);
     assert!(players.contains_key(&client_id));
     assert_eq!(players.get(&client_id).unwrap().name, client_name);
@@ -68,14 +72,14 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         match event {
             GameEvent::LobbyUpdated(_) => { /* Good */ }
             GameEvent::AppStateChanged(state) => {
-                assert!(matches!(state, p2p_game_engine::AppState::Lobby));
+                assert!(matches!(state, AppState::Lobby));
             }
-            _ => panic!("Client received wrong event type during lobby phase: {event:?}"),
+            other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }
     }
     // Client can also query the state directly
-    let app_state = client_room.get_app_state().await?.unwrap();
-    assert!(matches!(app_state, p2p_game_engine::AppState::Lobby));
+    let app_state = client_room.get_app_state().await?;
+    assert!(matches!(app_state, AppState::Lobby));
     println!("Client direct query successful.");
 
     // --- GAME START ---
@@ -84,33 +88,24 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Host starts the game
     host_room.start_game().await?;
 
-    // Client should receive AppStateChanged and StateUpdated
-    let mut game_started = false;
-    let mut state_received = false;
-
+    // Client should receive a GameStarted and a GameState Updated event.
     for _ in 0..2 {
         let event = await_event(&mut client_events).await?;
         println!("event: {event:?}");
         match event {
-            GameEvent::AppStateChanged(state) => {
-                println!("app state: {state:?}");
-                assert!(matches!(state, p2p_game_engine::AppState::InGame));
-                game_started = true;
+            GameEvent::GameStarted(state, app_state) => {
+                assert_eq!(state, TestGameState { counter: 0 });
+                assert!(matches!(app_state, p2p_game_engine::AppState::InGame));
             }
             GameEvent::StateUpdated(state) => {
                 assert_eq!(state, TestGameState { counter: 0 });
-                state_received = true;
             }
-            _ => panic!("Client received wrong event type"),
+            _ => panic!("Client received wrong event type, expected GameStarted. Got: {event:?}"),
         }
     }
-    assert!(
-        game_started && state_received,
-        "Client did not receive all start events"
-    );
 
     // Query the state directly
-    let initial_state = client_room.get_game_state().await?.unwrap();
+    let initial_state = client_room.get_game_state().await?;
     assert_eq!(initial_state, TestGameState { counter: 0 });
     println!("Client direct query of initial game state successful.");
 
@@ -131,15 +126,9 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     }
 
     // Query the final state
-    let final_state = client_room.get_game_state().await?.unwrap();
+    let final_state = client_room.get_game_state().await?;
     assert_eq!(final_state, TestGameState { counter: 1 });
     println!("Client direct query of final game state successful.");
-
-    // --- CLEANUP ---
-    host_handle.abort();
-    client_handle.abort();
-    host_dir.close()?;
-    client_dir.close()?;
 
     Ok(())
 }
