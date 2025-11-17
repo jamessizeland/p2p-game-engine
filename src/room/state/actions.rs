@@ -42,6 +42,20 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(KEY_PLAYERS, &value).await
     }
 
+    /// Add a player to the players list
+    pub async fn insert_player(&self, player_id: EndpointId, player: &PlayerInfo) -> Result<()> {
+        let mut players = self.get_players_list().await?.unwrap_or_default();
+        players.insert(player_id, player.clone());
+        self.set_player_list(&players).await
+    }
+
+    /// Remove a player from the players list
+    pub async fn remove_player(&self, player_id: &EndpointId) -> Result<()> {
+        let mut players = self.get_players_list().await?.unwrap_or_default();
+        players.remove(player_id);
+        self.set_player_list(&players).await
+    }
+
     /// Announce that we have left the room, and why.
     pub async fn announce_leave(&self, reason: &LeaveReason) -> Result<()> {
         let quit_key = format!("{}{}", std::str::from_utf8(PREFIX_QUIT)?, self.my_id);
@@ -63,14 +77,6 @@ impl<G: GameLogic> StateData<G> {
         let action_key = format!("{}{}", std::str::from_utf8(PREFIX_ACTION)?, self.my_id);
         let value = postcard::to_stdvec(&action)?;
         self.set_bytes(&action_key.into_bytes(), &value).await
-    }
-    /// Set the heartbeat to now
-    pub async fn set_heartbeat(&self) -> Result<()> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis() as u64;
-        let value = postcard::to_stdvec(&now)?;
-        self.set_bytes(KEY_HEARTBEAT, &value).await
     }
 }
 

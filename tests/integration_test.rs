@@ -59,7 +59,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Getting player map from host room...");
 
     // Host can also query the state directly
-    let players = host_room.get_players().await?.unwrap();
+    let players = host_room.get_players_list().await?.unwrap();
     println!("Players: {players:?}");
     assert_eq!(players.len(), 1);
     assert!(players.contains_key(&client_id));
@@ -71,9 +71,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         let event = await_event(&mut client_events).await?;
         match event {
             GameEvent::LobbyUpdated(_) => { /* Good */ }
-            GameEvent::AppStateChanged(state) => {
-                assert!(matches!(state, AppState::Lobby));
-            }
+            GameEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
             other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }
     }
@@ -93,14 +91,9 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         let event = await_event(&mut client_events).await?;
         println!("event: {event:?}");
         match event {
-            GameEvent::GameStarted(state, app_state) => {
-                assert_eq!(state, TestGameState { counter: 0 });
-                assert!(matches!(app_state, p2p_game_engine::AppState::InGame));
-            }
-            GameEvent::StateUpdated(state) => {
-                assert_eq!(state, TestGameState { counter: 0 });
-            }
-            _ => panic!("Client received wrong event type, expected GameStarted. Got: {event:?}"),
+            GameEvent::AppStateChanged(AppState::InGame) => { /* Good */ }
+            GameEvent::StateUpdated(TestGameState { counter: 0 }) => { /* Good */ }
+            _ => panic!("Client received wrong event type, got: {event:?}"),
         }
     }
 
@@ -119,10 +112,8 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let event = await_event(&mut client_events).await?;
 
     match event {
-        GameEvent::StateUpdated(state) => {
-            assert_eq!(state, TestGameState { counter: 1 });
-        }
-        _ => panic!("Client received wrong event after action"),
+        GameEvent::StateUpdated(TestGameState { counter: 1 }) => { /* Good */ }
+        _ => panic!("Client received wrong event after action: {event:?}"),
     }
 
     // Query the final state

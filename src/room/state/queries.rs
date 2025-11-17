@@ -32,7 +32,7 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Get list of players in this Game Room.
-    pub async fn get_players(&self) -> Result<Option<PlayerMap>> {
+    pub async fn get_players_list(&self) -> Result<Option<PlayerMap>> {
         if let Some(bytes) = self.get_bytes(KEY_PLAYERS).await? {
             Ok(Some(postcard::from_bytes(&bytes)?))
         } else {

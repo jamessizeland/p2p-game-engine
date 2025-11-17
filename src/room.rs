@@ -8,6 +8,7 @@ use crate::GameLogic;
 use anyhow::Result;
 use iroh::EndpointId;
 use iroh_docs::DocTicket;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
@@ -93,14 +94,11 @@ impl<G: GameLogic> GameRoom<G> {
         if self.get_app_state().await? != AppState::Lobby {
             return Err(anyhow::anyhow!("Game has already started"));
         }
-        let players = self.get_players().await?.unwrap_or_default();
 
-        let current_state: G::GameState = self.get_game_state().await?;
-
-        self.logic.start_conditions_met(&players, &current_state)?;
-
-        let roles = self.logic.assign_roles(&players);
+        let players: PlayerMap = self.get_players_list().await?.unwrap_or_default();
+        let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players);
         let initial_state: G::GameState = self.logic.initial_state(&roles);
+        self.logic.start_conditions_met(&players, &initial_state)?;
 
         // Broadast the initial game state before setting the game to active.
         self.set_game_state(&initial_state).await?;
