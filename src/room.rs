@@ -51,7 +51,7 @@ impl<G: GameLogic> GameRoom<G> {
     /// Create a new game room
     pub async fn create(
         logic: G,
-        save_path: Option<PathBuf>,
+        save_path: PathBuf,
     ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
         let state = StateData::new(save_path, None).await?;
 
@@ -71,7 +71,7 @@ impl<G: GameLogic> GameRoom<G> {
     pub async fn join(
         logic: G,
         ticket: String,
-        save_path: Option<PathBuf>,
+        save_path: PathBuf,
     ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
         // TODO establish that this ticket matches the game we expect.
         let state = StateData::new(save_path, Some(ticket)).await?;

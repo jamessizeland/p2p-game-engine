@@ -29,7 +29,7 @@ impl<G: GameLogic> GameRoom<G> {
     pub(crate) async fn start_event_loop(
         &mut self,
     ) -> Result<(mpsc::Receiver<GameEvent<G>>, JoinHandle<()>)> {
-        let mut sub = self.subscribe().await?;
+        let mut sub = self.state.doc.subscribe().await?;
         let (sender, receiver) = mpsc::channel(32); // Event channel for the UI
 
         let state_data = self.state.clone();
@@ -109,7 +109,10 @@ async fn process_entry<G: GameLogic>(
     current_state: &mut Option<G::GameState>,
 ) -> Result<Option<GameEvent<G>>> {
     let is_host = data.is_host().await?;
-
+    println!(
+        ">>PROCESSING: {entry:?} FOR {}",
+        if is_host { "HOST" } else { "CLIENT" }
+    );
     // --- HOST-ONLY LOGIC ---
     if is_host {
         if let Some(node_id) = entry.is_join() {
