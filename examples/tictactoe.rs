@@ -14,17 +14,18 @@
 //! ```sh
 //! cargo run --example tictactoe join <ticket>
 //! ```
+#![allow(unused)]
 
 use anyhow::Result;
 use clap::Parser;
-use futures::StreamExt;
 use iroh::EndpointId;
-use p2p_game_engine::{GameEvent, GameLogic, GameRoom, Iroh, PlayerMap};
+use p2p_game_engine::{GameEvent, GameLogic, GameRoom, PlayerMap};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{self, Write};
 use thiserror::Error;
+use tokio_util::io::ReaderStream;
 
 // --- CLI Setup ---
 
@@ -112,6 +113,8 @@ pub enum GameError {
     GameOver,
     #[error("You are not a player in this game")]
     NotAPlayer,
+    #[error("Not enough players to start a game")]
+    NotEnoughPlayers,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +159,18 @@ impl GameLogic for TicTacToeLogic {
             status: GameStatus::Ongoing,
             current_turn: PlayerRole::X, // X always starts
             roles: roles.clone(),
+        }
+    }
+
+    fn start_conditions_met(
+        &self,
+        players: &PlayerMap,
+        current_state: &Self::GameState,
+    ) -> std::result::Result<(), Self::GameError> {
+        if players.len() < 2 {
+            Err(GameError::NotEnoughPlayers)
+        } else {
+            Ok(())
         }
     }
 
@@ -250,33 +265,33 @@ fn print_board(state: &TicTacToeState) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let iroh = Iroh::new(tempfile::tempdir()?.path().to_path_buf()).await?;
+    let data_path = tempfile::tempdir()?.path().to_path_buf();
 
     // --- Setup Room ---
-    let (room, my_role): (GameRoom<TicTacToeLogic>, PlayerRole) = match cli.command {
+    let (room, mut events) = match cli.command {
         Commands::Host => {
-            let (room, ticket) = GameRoom::host(iroh, TicTacToeLogic).await?;
-            println!("Game hosted! Your ID: {} Ticket: {}", room.id, ticket);
+            let (room, events) = GameRoom::create(TicTacToeLogic, data_path).await?;
+            println!("Game hosted! Your ID: {}", room.id());
+            println!("Ticket: {}", room.ticket());
             println!("Your role is X. Waiting for player O to join...");
             println!("Once player O has joined, type 'start' to begin the game.");
-            (room, PlayerRole::X)
+            (room, events)
         }
         Commands::Join { ticket } => {
-            let room = GameRoom::join(iroh, TicTacToeLogic, ticket).await?;
-            // We don't know our role until the game starts and roles are assigned.
-            // For now, we can assume we might be a player or an observer.
-            println!("Joined lobby. Your ID: {}. Announcing presence...", room.id);
-            room.announce_presence("NewPlayer").await?;
-            println!("Waiting for the host to start the game...");
-            (room, PlayerRole::Observer) // Tentative role
+            let (room, events) = GameRoom::join(TicTacToeLogic, ticket, data_path).await?;
+            println!("Joined game! Your ID: {}", room.id());
+            print!("Enter your name: ");
+            io::stdout().flush()?;
+            let mut name = String::new();
+            io::stdin().read_line(&mut name)?;
+            room.announce_presence(name.trim()).await?;
+            println!("Welcome! Waiting for the host to start the game...");
+            (room, events)
         }
     };
 
-    let mut my_final_role = my_role;
-
     // --- Event Loop ---
-    let (event_handle, mut events) = room.start_event_loop().await?;
-    let mut stdin = tokio_util::io::ReaderStream::new(tokio::io::stdin());
+    let mut stdin = ReaderStream::new(tokio::io::stdin());
 
     loop {
         print!("> ");
@@ -284,12 +299,12 @@ async fn main() -> Result<()> {
 
         tokio::select! {
             // Handle user input
-            Some(Ok(input)) = stdin.next() => {
+            Some(Ok(input)) = futures::StreamExt::next(&mut stdin) => {
                 let line = String::from_utf8(input.to_vec())?.trim().to_string();
 
                 if line.is_empty() { continue; }
 
-                if room.is_host && line == "start" {
+                if room.is_host().await? && line == "start" {
                     println!("Starting game...");
                     if let Err(e) = room.start_game().await {
                         eprintln!("Failed to start game: {}", e);
@@ -298,7 +313,7 @@ async fn main() -> Result<()> {
                 }
 
                 if let Ok(num) = line.parse::<u8>() {
-                    if num >= 1 && num <= 9 {
+                    if (1..=9).contains(&num) {
                         println!("Submitting move: {}", num);
                         let action = TicTacToeAction::Place(num - 1);
                         if let Err(e) = room.submit_action(action).await {
@@ -309,7 +324,7 @@ async fn main() -> Result<()> {
                     }
                 } else {
                     // Treat as chat
-                    if let Err(e) = room.send_chat(line).await {
+                    if let Err(e) = room.send_chat(&line).await {
                         eprintln!("Failed to send chat: {}", e);
                     }
                 }
@@ -318,39 +333,35 @@ async fn main() -> Result<()> {
             // Handle game events
             Some(event) = events.recv() => {
                 match event {
-                    GameEvent::LobbyUpdated(mut players) => {
-                        // Don't show the host in the lobby list for clients
-                        if !room.is_host {
-                            players.retain(|id, _| *id != room.id);
-                        }
-                        println!("\nLobby updated. Players: {}", players.len());
+                    GameEvent::LobbyUpdated(players) => {
+                        println!("\nLobby updated. Players now: {:?}", players.values().map(|p|&p.name).collect::<Vec<_>>());
                     }
-                    GameEvent::GameStarted(state, _app_state) => {
-                        // Determine our role if we don't know it yet
-                        if let Some(role) = state.roles.get(&room.id) {
-                            my_final_role = *role;
-                            println!("\nGame started! Your role is: {}", my_final_role);
+                    GameEvent::StateUpdated(state) => {
+                        if let Some(role) = state.roles.get(&room.id()) {
+                            println!("\nGame state updated! Your role is: {role}");
                         } else {
-                            // We are not in the roles map, so we are an observer.
-                            my_final_role = PlayerRole::Observer;
-                            println!("\nGame started! You are an observer.");
+                            println!("\nGame state updated! You are an observer.");
                         }
                         print_board(&state);
                     },
-                    GameEvent::StateUpdated(state) => print_board(&state),
-
                     GameEvent::ChatReceived(msg) => {
-                        let from = if msg.from == room.id { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
+                        let from = if msg.from == room.id() { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
                         println!("\n[Chat] {}: {}", from, msg.message);
                     }
                     GameEvent::Error(e) => eprintln!("\nAn error occurred: {}", e),
                     GameEvent::AppStateChanged(app_state) => {
                         println!("\nGame state changed to: {:?}", app_state);
                     }
+                    GameEvent::HostDisconnected => {
+                        println!("\nGame Host disconnected. The game is over.");
+                        break;
+                    },
                 }
+            }
+            else => {
+                break; // events channel closed
             }
         }
     }
-    event_handle.abort();
     Ok(())
 }
