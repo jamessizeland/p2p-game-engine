@@ -273,7 +273,12 @@ async fn main() -> Result<()> {
             let (room, events) = GameRoom::create(TicTacToeLogic, data_path).await?;
             println!("Game hosted! Your ID: {}", room.id());
             println!("Ticket: {}", room.ticket());
-            println!("Your role is X. Waiting for player O to join...");
+            print!("Enter your name: ");
+            io::stdout().flush()?;
+            let mut name = String::new();
+            io::stdin().read_line(&mut name)?;
+            room.announce_presence(name.trim()).await?;
+            println!("Welcome {name}! Your role is X. Waiting for player O to join...");
             println!("Once player O has joined, type 'start' to begin the game.");
             (room, events)
         }
@@ -285,7 +290,7 @@ async fn main() -> Result<()> {
             let mut name = String::new();
             io::stdin().read_line(&mut name)?;
             room.announce_presence(name.trim()).await?;
-            println!("Welcome! Waiting for the host to start the game...");
+            println!("Welcome {name}! Waiting for the host to start the game...");
             (room, events)
         }
     };
