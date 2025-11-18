@@ -43,7 +43,7 @@ impl<G: GameLogic> Deref for GameRoom<G> {
 impl<G: GameLogic> GameRoom<G> {
     /// Get Iroh Network Endpoint ID
     pub fn id(&self) -> EndpointId {
-        self.my_id
+        self.endpoint_id
     }
     /// Read this room's join ticket
     pub fn ticket(&self) -> &DocTicket {

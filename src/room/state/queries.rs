@@ -7,7 +7,7 @@ impl<G: GameLogic> StateData<G> {
     pub async fn is_host(&self) -> Result<bool> {
         if let Some(bytes) = self.get_bytes(KEY_HOST_ID).await? {
             let host_id = String::from_utf8_lossy(&bytes);
-            Ok(self.my_id.to_string() == host_id)
+            Ok(self.endpoint_id.to_string() == host_id)
         } else {
             Ok(false)
         }

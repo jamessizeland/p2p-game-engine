@@ -6,9 +6,13 @@ mod queries;
 use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use iroh::EndpointId;
-use iroh_docs::{DocTicket, Entry, api::protocol::ShareMode, store::Query};
+use iroh_docs::{
+    AuthorId, DocTicket, Entry,
+    api::{Doc, protocol::ShareMode},
+    store::Query,
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{collections::HashMap, path::PathBuf, str::FromStr as _};
+use std::{collections::HashMap, marker::PhantomData, path::PathBuf, str::FromStr as _};
 
 use crate::{GameLogic, Iroh};
 
@@ -59,44 +63,38 @@ pub enum AppState {
 /// Wrapper for the Iroh Document
 #[derive(Clone)]
 pub struct StateData<G: GameLogic> {
-    pub(crate) doc: iroh_docs::api::Doc,
-    pub(crate) author_id: iroh_docs::AuthorId,
-    pub(crate) my_id: EndpointId,
-    pub(crate) iroh: Iroh,
+    phantom: PhantomData<G>,
+    pub(crate) endpoint_id: EndpointId,
+    pub(crate) author_id: AuthorId,
     pub(crate) ticket: DocTicket,
-    phantom: std::marker::PhantomData<G>,
+    pub(crate) iroh: Iroh,
+    pub(crate) doc: Doc,
 }
 
 impl<G: GameLogic> StateData<G> {
     /// Create a new StateData instance
     pub async fn new(store_path: PathBuf, ticket: Option<String>) -> Result<Self> {
         let iroh = Iroh::new(store_path).await?;
-        let my_id = iroh.endpoint().id();
-        if let Some(ticket) = ticket {
-            let ticket = DocTicket::from_str(&ticket)?;
+        let endpoint_id = iroh.endpoint().id();
+        let (ticket, doc, author_id) = if let Some(ticket_str) = ticket {
+            let ticket = DocTicket::from_str(&ticket_str)?;
             let doc = iroh.docs().import(ticket.clone()).await?;
             let author_id = iroh.setup_author(&doc.id()).await?;
-            Ok(Self {
-                doc,
-                author_id,
-                my_id,
-                iroh,
-                ticket,
-                phantom: std::marker::PhantomData,
-            })
+            (ticket, doc, author_id)
         } else {
             let doc = iroh.docs().create().await?;
             let author_id = iroh.setup_author(&doc.id()).await?;
             let ticket = doc.share(ShareMode::Write, Default::default()).await?;
-            Ok(Self {
-                doc,
-                author_id,
-                my_id,
-                iroh,
-                ticket,
-                phantom: std::marker::PhantomData,
-            })
-        }
+            (ticket, doc, author_id)
+        };
+        Ok(Self {
+            phantom: PhantomData,
+            endpoint_id,
+            author_id,
+            ticket,
+            iroh,
+            doc,
+        })
     }
 
     /// Convert entry to known data type
