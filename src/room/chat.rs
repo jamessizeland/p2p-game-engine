@@ -1,32 +1,23 @@
-use crate::state::*;
-use crate::{GameLogic, GameRoom};
 use anyhow::Result;
+use iroh::EndpointId;
+use serde::{Deserialize, Serialize};
 
-impl<G: GameLogic> GameRoom<G> {
-    /// Send a chat message
-    pub async fn send_chat(&self, message: String) -> Result<()> {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ChatMessage {
+    pub from: EndpointId,
+    pub message: String,
+    pub timestamp: u64,
+}
+
+impl ChatMessage {
+    pub fn new(from: EndpointId, message: &str) -> Result<Self> {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_millis() as u64;
-
-        // Key ensures uniqueness for LWW, e.g., "chat.123456789.id"
-        let chat_key = format!(
-            "{}{}.{}",
-            std::str::from_utf8(PREFIX_CHAT)?,
+        Ok(Self {
+            from,
+            message: message.to_string(),
             timestamp,
-            self.id
-        );
-
-        let payload = ChatMessage {
-            from: self.id,
-            message,
-            timestamp,
-        };
-        let bytes = postcard::to_stdvec(&payload)?;
-
-        self.doc
-            .set_bytes(self.author.clone(), chat_key.into_bytes(), bytes)
-            .await?;
-        Ok(())
+        })
     }
 }

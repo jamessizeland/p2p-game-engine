@@ -25,4 +25,11 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
         player_id: &EndpointId,
         action: &Self::GameAction,
     ) -> Result<(), Self::GameError>;
+
+    /// Check that all game specific conditions are met for starting this game.
+    fn start_conditions_met(
+        &self,
+        players: &PlayerMap,
+        current_state: &Self::GameState,
+    ) -> Result<(), Self::GameError>;
 }

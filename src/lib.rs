@@ -1,9 +1,9 @@
 mod iroh;
 mod logic;
+mod player;
 mod room;
-mod state;
 
 pub use iroh::Iroh;
 pub use logic::GameLogic;
-pub use room::{GameEvent, GameRoom};
-pub use state::*;
+pub use player::{PlayerInfo, PlayerMap};
+pub use room::{AppState, GameEvent, GameRoom};
