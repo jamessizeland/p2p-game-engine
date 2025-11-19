@@ -51,10 +51,15 @@ impl Iroh {
     /// Check if we have a saved AuthorId for this document to rejoin.
     pub async fn setup_author(&self, doc_id: &NamespaceId) -> Result<AuthorId> {
         let author_path = self.path.join(format!("{}.author", doc_id));
-        if author_path.exists()
-            && let Ok(bytes) = tokio::fs::read(&author_path).await?.try_into()
-        {
-            let author = iroh_docs::Author::from_bytes(&bytes);
+        if author_path.exists() {
+            let bytes = tokio::fs::read(&author_path).await?;
+            let author =
+                iroh_docs::Author::from_bytes(&bytes.as_slice().try_into().map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid author file, expected 64 bytes, got {}",
+                        bytes.len()
+                    )
+                })?);
             let existing_author = author.id();
             self.docs().author_import(author).await?;
             Ok(existing_author)
