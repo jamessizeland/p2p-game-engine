@@ -3,7 +3,7 @@ use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, error::Error, fmt::Debug};
 
-use crate::room::PlayerMap;
+use crate::PlayerMap;
 
 /// Generic Trait for p2p turn based games.
 pub trait GameLogic: Debug + Send + Sync + 'static {

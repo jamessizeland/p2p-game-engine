@@ -1,5 +1,5 @@
 use super::*;
-use crate::GameLogic;
+use crate::{GameLogic, PlayerInfo, PlayerMap};
 use anyhow::Result;
 
 impl<G: GameLogic> StateData<G> {
@@ -32,12 +32,18 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Get list of players in this Game Room.
-    pub async fn get_players_list(&self) -> Result<Option<PlayerMap>> {
+    pub async fn get_players_list(&self) -> Result<PlayerMap> {
         if let Some(bytes) = self.get_bytes(KEY_PLAYERS).await? {
-            Ok(Some(postcard::from_bytes(&bytes)?))
+            Ok(postcard::from_bytes(&bytes)?)
         } else {
-            Ok(None)
+            Err(anyhow::anyhow!("No PlayerList found"))
         }
+    }
+
+    /// Get a player's Information from their endpointId, if they exist.
+    pub async fn get_player_info(&self, player_id: &EndpointId) -> Result<Option<PlayerInfo>> {
+        let players = self.get_players_list().await?;
+        Ok(players.get(player_id).cloned())
     }
 }
 

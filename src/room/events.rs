@@ -1,6 +1,6 @@
 use crate::{
-    GameLogic, GameRoom,
-    room::{AppState, PlayerInfo, PlayerMap, chat::ChatMessage, state::*},
+    GameLogic, GameRoom, PlayerInfo,
+    room::{AppState, PlayerMap, chat::ChatMessage, state::*},
 };
 use anyhow::{Result, anyhow};
 use iroh_blobs::Hash;
@@ -15,7 +15,7 @@ pub enum GameEvent<G: GameLogic> {
     LobbyUpdated(PlayerMap),
     StateUpdated(G::GameState),
     AppStateChanged(AppState),
-    ChatReceived(ChatMessage),
+    ChatReceived { id: PlayerInfo, msg: ChatMessage },
     HostDisconnected,
     Error(String),
 }
@@ -86,16 +86,16 @@ async fn process_entry<G: GameLogic>(
                 Ok(action) => {
                     // Apply the game logic and broadcast the new authoritative state
                     match logic.apply_action(current_state, &node_id, &action) {
-                        Err(e) => return Err(anyhow!("Invalid action from {}: {}", node_id, e)),
+                        Err(e) => {
+                            let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                            return Err(anyhow!("Invalid action from {player}: {e}"));
+                        }
                         Ok(()) => data.set_game_state(current_state).await.ok(),
                     };
                 }
                 Err(e) => {
-                    return Err(anyhow!(
-                        "Failed to parse GameAction from {}: {}",
-                        node_id,
-                        e
-                    ));
+                    let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                    return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
                 }
             }
         }
@@ -104,13 +104,13 @@ async fn process_entry<G: GameLogic>(
         if entry.is_game_state_update() {
             // only the host can update the Game State
             return match data.parse::<G::GameState>(&entry).await {
-                Err(e) => Err(anyhow!("Failed to parse GameState: {}", e)),
+                Err(e) => Err(anyhow!("Failed to parse GameState: {e}")),
                 Ok(state) => Ok(Some(GameEvent::StateUpdated(state))),
             };
         } else if entry.is_app_state_update() {
             // only the host can update the App State
             return match data.parse::<AppState>(&entry).await {
-                Err(e) => Err(anyhow!("Failed to parse AppState: {}", e)),
+                Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
                 Ok(app_state) => Ok(Some(GameEvent::AppStateChanged(app_state))),
             };
         }
@@ -119,13 +119,17 @@ async fn process_entry<G: GameLogic>(
     // --- ALL-PLAYERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
+        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
         match data.parse::<ChatMessage>(&entry).await {
-            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {node_id}: {e}")),
-            Ok(msg) => Ok(Some(GameEvent::ChatReceived(msg))),
+            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {player}: {e}")),
+            Ok(msg) => Ok(Some(GameEvent::ChatReceived {
+                id: player.clone(),
+                msg,
+            })),
         }
     } else if entry.is_players_update() {
         match data.parse::<PlayerMap>(&entry).await {
-            Err(e) => Err(anyhow!("Failed to parse PlayerMap: {}", e)),
+            Err(e) => Err(anyhow!("Failed to parse PlayerMap: {e}")),
             Ok(players) => Ok(Some(GameEvent::LobbyUpdated(players))),
         }
     } else {

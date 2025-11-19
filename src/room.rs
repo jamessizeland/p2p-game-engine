@@ -4,7 +4,7 @@ mod chat;
 mod events;
 mod state;
 
-use crate::GameLogic;
+use crate::{GameLogic, PlayerMap};
 use anyhow::Result;
 use iroh::EndpointId;
 use iroh_docs::DocTicket;
@@ -14,7 +14,7 @@ use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
 pub use events::GameEvent;
-pub use state::{AppState, PlayerInfo, PlayerMap, StateData};
+pub use state::{AppState, StateData};
 
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
@@ -58,6 +58,7 @@ impl<G: GameLogic> GameRoom<G> {
 
         // Host immediately sets the initial lobby state and its own ID.
         state.set_app_state(&AppState::Lobby).await?;
+        state.set_player_list(&Default::default()).await?;
         state.claim_host().await?;
         let mut room = GameRoom {
             state: Arc::new(state),
@@ -95,7 +96,7 @@ impl<G: GameLogic> GameRoom<G> {
             return Err(anyhow::anyhow!("Game has already started"));
         }
 
-        let players: PlayerMap = self.get_players_list().await?.unwrap_or_default();
+        let players: PlayerMap = self.get_players_list().await?;
         let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players);
         let initial_state: G::GameState = self.logic.initial_state(&roles);
         self.logic.start_conditions_met(&players, &initial_state)?;

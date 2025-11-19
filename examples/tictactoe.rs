@@ -131,7 +131,7 @@ impl GameLogic for TicTacToeLogic {
         let mut roles = HashMap::new();
         let mut player_roles = [PlayerRole::X, PlayerRole::O].into_iter();
 
-        for (player_id, _player_info) in players {
+        for (player_id, _player_info) in players.iter() {
             if let Some(role) = player_roles.next() {
                 roles.insert(*player_id, role);
             }
@@ -349,9 +349,9 @@ async fn main() -> Result<()> {
                         }
                         print_board(&state);
                     },
-                    GameEvent::ChatReceived(msg) => {
+                    GameEvent::ChatReceived{id, msg} => {
                         let from = if msg.from == room.id() { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
-                        println!("\n[Chat] {}: {}", from, msg.message);
+                        println!("\n[Chat] {}: {}\n{}", id.name, msg.message, msg.from);
                     }
                     GameEvent::Error(e) => eprintln!("\nAn error occurred: {}", e),
                     GameEvent::AppStateChanged(app_state) => {

@@ -12,7 +12,7 @@ use iroh_docs::{
     store::Query,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{collections::HashMap, marker::PhantomData, path::PathBuf, str::FromStr as _};
+use std::{marker::PhantomData, path::PathBuf, str::FromStr as _};
 
 use crate::{GameLogic, Iroh};
 
@@ -27,21 +27,6 @@ pub(self) const PREFIX_ACTION: &[u8] = b"action.";
 pub(self) const PREFIX_CHAT: &[u8] = b"chat.";
 #[allow(unused)]
 pub(self) const PREFIX_PLAYER_READY: &[u8] = b"player_ready.";
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PlayerInfo {
-    pub name: String,
-}
-
-impl Into<PlayerInfo> for &str {
-    fn into(self) -> PlayerInfo {
-        PlayerInfo {
-            name: self.to_string(),
-        }
-    }
-}
-
-pub type PlayerMap = HashMap<EndpointId, PlayerInfo>;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
@@ -143,10 +128,15 @@ impl GameKey for Entry {
         if !self.key().starts_with(PREFIX_CHAT) {
             return None;
         }
-        let id = String::from_utf8_lossy(&self.key()[PREFIX_CHAT.len()..]);
+        // The key is "chat.<timestamp>.<id>", so we split and take the last part.
+        let key_str = String::from_utf8_lossy(self.key());
+        let Some(id_str) = key_str.split('.').last() else {
+            return None;
+        };
+
         Some(
-            EndpointId::from_str(&id)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err)),
+            EndpointId::from_str(id_str)
+                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", key_str, err)),
         )
     }
     fn is_players_update(&self) -> bool {

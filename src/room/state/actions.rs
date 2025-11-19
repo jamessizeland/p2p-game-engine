@@ -1,5 +1,5 @@
 use super::*;
-use crate::{GameLogic, room::chat::ChatMessage};
+use crate::{GameLogic, PlayerInfo, PlayerMap, room::chat::ChatMessage};
 use anyhow::Result;
 
 impl<G: GameLogic> StateData<G> {
@@ -25,7 +25,8 @@ impl<G: GameLogic> StateData<G> {
     /// Send a chat message.
     pub async fn send_chat(&self, message: &str) -> Result<()> {
         let message = ChatMessage::new(self.endpoint_id, message)?;
-        // Key ensures uniqueness for LWW, e.g., "chat.123456789.id"
+        // Key ensures uniqueness for last-write-wins conflict resolution
+        // e.g., "chat.123456789.id"
         let chat_key = format!(
             "{}{}.{}",
             std::str::from_utf8(PREFIX_CHAT)?,
@@ -44,14 +45,14 @@ impl<G: GameLogic> StateData<G> {
 
     /// Add a player to the players list
     pub async fn insert_player(&self, player_id: EndpointId, player: &PlayerInfo) -> Result<()> {
-        let mut players = self.get_players_list().await?.unwrap_or_default();
+        let mut players = self.get_players_list().await?;
         players.insert(player_id, player.clone());
         self.set_player_list(&players).await
     }
 
     /// Remove a player from the players list
     pub async fn remove_player(&self, player_id: &EndpointId) -> Result<()> {
-        let mut players = self.get_players_list().await?.unwrap_or_default();
+        let mut players = self.get_players_list().await?;
         players.remove(player_id);
         self.set_player_list(&players).await
     }
@@ -64,7 +65,7 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Announce that we have joined the room.
-    pub async fn announce_presence(&self, player: impl Into<super::PlayerInfo>) -> Result<()> {
+    pub async fn announce_presence(&self, player: impl Into<PlayerInfo>) -> Result<()> {
         let join_key = format!("{}{}", str::from_utf8(PREFIX_JOIN)?, self.endpoint_id);
         let value = postcard::to_stdvec(&player.into())?;
         self.set_bytes(&join_key.into_bytes(), &value).await

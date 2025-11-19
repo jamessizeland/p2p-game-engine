@@ -31,6 +31,21 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let ticket_string = host_room.ticket().to_string();
     println!("Host Ticket: {}", &ticket_string);
 
+    let host_name = "HostPlayer";
+    println!("Announcing Host Presence");
+    host_room.announce_presence(host_name).await?;
+    let event = await_event(&mut host_events).await?;
+    println!("Received Host Lobby Update: {event:?}");
+    let host_id = host_room.id();
+    match event {
+        GameEvent::LobbyUpdated(players) => {
+            assert_eq!(players.len(), 1);
+            assert!(players.contains_key(&host_id));
+            assert_eq!(players.get(&host_id).unwrap().name, host_name);
+        }
+        _ => panic!("Host received wrong event type"),
+    }
+
     println!("Setting up Client Room");
     let (client_room, mut client_events) =
         GameRoom::join(TestGame, ticket_string, client_dir.to_path_buf()).await?;
@@ -49,8 +64,9 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let client_id = client_room.id();
     match event {
         GameEvent::LobbyUpdated(players) => {
-            assert_eq!(players.len(), 1);
+            assert_eq!(players.len(), 2);
             assert!(players.contains_key(&client_id));
+            assert!(players.contains_key(&host_id));
             assert_eq!(players.get(&client_id).unwrap().name, client_name);
         }
         _ => panic!("Host received wrong event type"),
@@ -59,16 +75,17 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Getting player map from host room...");
 
     // Host can also query the state directly
-    let players = host_room.get_players_list().await?.unwrap();
-    println!("Players: {players:?}");
-    assert_eq!(players.len(), 1);
+    let players = host_room.get_players_list().await?;
+    println!("Players: {players}");
+    assert_eq!(players.len(), 2);
     assert!(players.contains_key(&client_id));
     assert_eq!(players.get(&client_id).unwrap().name, client_name);
     println!("Host direct query successful.");
 
     // Client should first receive the lobby update and the initial lobby state
-    for _ in 0..2 {
+    for _ in 0..3 {
         let event = await_event(&mut client_events).await?;
+        println!("event: {event:?}");
         match event {
             GameEvent::LobbyUpdated(_) => { /* Good */ }
             GameEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
