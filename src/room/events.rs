@@ -30,9 +30,8 @@ impl<G: GameLogic> GameRoom<G> {
         let state_data = self.state.clone();
         let logic = self.logic.clone();
 
-        let mut pending_entries: HashMap<Hash, Entry> = HashMap::new();
-
         let task_handle = tokio::spawn(async move {
+            let mut pending_entries: HashMap<Hash, Entry> = HashMap::new();
             loop {
                 tokio::select! {
                     // Listen for iroh doc events
@@ -62,6 +61,12 @@ async fn process_entry<G: GameLogic>(
     data: &StateData<G>,
     logic: &Arc<G>,
 ) -> Result<Option<GameEvent<G>>> {
+    let is_host = data.is_host().await?;
+    println!(
+        ">> {} >> Processing entry: {:?}",
+        if is_host { "HOST" } else { "CLIENT" },
+        String::from_utf8_lossy(entry.key())
+    );
     // --- ALL-PLAYERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
@@ -99,43 +104,41 @@ async fn process_entry<G: GameLogic>(
         };
     }
 
-    // --- HOST-ONLY & CLIENT-ONLY LOGIC ---
-
-    let is_host = data.is_host().await?;
     // --- HOST-ONLY LOGIC ---
-    if is_host {
-        if let Some(node_id) = entry.is_join() {
-            let node_id = node_id?;
-            // A player has joined the game room.
-            // Get the PlayerInfo payload
-            let player_info: PlayerInfo = match data.parse(&entry).await {
-                Ok(info) => info,
-                Err(e) => {
-                    return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
-                }
-            };
-            // Broadcast the new canonical player list
-            data.insert_player(node_id, &player_info).await.ok();
-        } else if let Some(node_id) = entry.is_action_request() {
-            let node_id = node_id?;
-            // Ensure we have a state to apply the action to
-            let current_state = &mut data.get_game_state().await?;
+    if !data.is_host().await? {
+        return Ok(None);
+    }
+    if let Some(node_id) = entry.is_join() {
+        let node_id = node_id?;
+        // A player has joined the game room.
+        // Get the PlayerInfo payload
+        let player_info = match data.parse::<PlayerInfo>(&entry).await {
+            Ok(info) => info,
+            Err(e) => {
+                return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
+            }
+        };
+        // Broadcast the new canonical player list
+        data.insert_player(node_id, &player_info).await?;
+    } else if let Some(node_id) = entry.is_action_request() {
+        let node_id = node_id?;
+        // Ensure we have a state to apply the action to
+        let current_state = &mut data.get_game_state().await?;
 
-            match data.parse::<G::GameAction>(&entry).await {
-                Ok(action) => {
-                    // Apply the game logic and broadcast the new authoritative state
-                    match logic.apply_action(current_state, &node_id, &action) {
-                        Err(e) => {
-                            let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                            return Err(anyhow!("Invalid action from {player}: {e}"));
-                        }
-                        Ok(()) => data.set_game_state(current_state).await.ok(),
-                    };
-                }
-                Err(e) => {
-                    let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                    return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
-                }
+        match data.parse::<G::GameAction>(&entry).await {
+            Ok(action) => {
+                // Apply the game logic and broadcast the new authoritative state
+                match logic.apply_action(current_state, &node_id, &action) {
+                    Err(e) => {
+                        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                        return Err(anyhow!("Invalid action from {player}: {e}"));
+                    }
+                    Ok(()) => data.set_game_state(current_state).await?,
+                };
+            }
+            Err(e) => {
+                let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
             }
         }
     }
