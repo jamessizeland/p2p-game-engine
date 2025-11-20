@@ -1,5 +1,5 @@
 use super::*;
-use crate::{GameLogic, PlayerInfo, PlayerMap, room::chat::ChatMessage};
+use crate::{GameLogic, PlayerInfo, room::chat::ChatMessage};
 use anyhow::Result;
 
 impl<G: GameLogic> StateData<G> {
@@ -37,24 +37,20 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(&chat_key.into_bytes(), &value).await
     }
 
-    /// Update the list of players.
-    pub async fn set_player_list(&self, players: &PlayerMap) -> Result<()> {
-        let value = postcard::to_stdvec(players)?;
-        self.set_bytes(KEY_PLAYERS, &value).await
-    }
-
     /// Add a player to the players list
     pub async fn insert_player(&self, player_id: EndpointId, player: &PlayerInfo) -> Result<()> {
-        let mut players = self.get_players_list().await?;
-        players.insert(player_id, player.clone());
-        self.set_player_list(&players).await
+        let key = format!("{}{}", std::str::from_utf8(PREFIX_PLAYER)?, player_id);
+        let value = postcard::to_stdvec(player)?;
+        self.set_bytes(key.as_bytes(), &value).await
     }
 
     /// Remove a player from the players list
     pub async fn remove_player(&self, player_id: &EndpointId) -> Result<()> {
-        let mut players = self.get_players_list().await?;
-        players.remove(player_id);
-        self.set_player_list(&players).await
+        let key = format!("{}{}", std::str::from_utf8(PREFIX_PLAYER)?, player_id);
+        self.doc
+            .del(self.author_id, key.as_bytes().to_vec())
+            .await?;
+        Ok(())
     }
 
     /// Announce that we have left the room, and why.

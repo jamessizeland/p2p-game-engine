@@ -25,8 +25,7 @@ pub(self) const PREFIX_JOIN: &[u8] = b"join_request.";
 pub(self) const PREFIX_QUIT: &[u8] = b"quit_request.";
 pub(self) const PREFIX_ACTION: &[u8] = b"action.";
 pub(self) const PREFIX_CHAT: &[u8] = b"chat.";
-#[allow(unused)]
-pub(self) const PREFIX_PLAYER_READY: &[u8] = b"player_ready.";
+pub(self) const PREFIX_PLAYER: &[u8] = b"player.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
@@ -97,6 +96,8 @@ pub trait GameKey {
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
     /// Player map has updated
     fn is_players_update(&self) -> bool;
+    /// A player entry has been updated
+    fn is_player_entry(&self) -> bool;
     /// Game State has updated
     fn is_game_state_update(&self) -> bool;
     /// App State has updated
@@ -141,6 +142,9 @@ impl GameKey for Entry {
     }
     fn is_players_update(&self) -> bool {
         self.key() == KEY_PLAYERS
+    }
+    fn is_player_entry(&self) -> bool {
+        self.key().starts_with(PREFIX_PLAYER)
     }
     fn is_game_state_update(&self) -> bool {
         self.key() == KEY_GAME_STATE
