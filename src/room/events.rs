@@ -67,6 +67,46 @@ async fn process_entry<G: GameLogic>(
         if is_host { "HOST" } else { "CLIENT" },
         String::from_utf8_lossy(entry.key())
     );
+    // --- HOST LOGIC ---
+    if data.is_host().await? {
+        if let Some(node_id) = entry.is_join() {
+            let node_id = node_id?;
+            // A player has joined the game room.
+            // Get the PlayerInfo payload
+            let player_info = match data.parse::<PlayerInfo>(&entry).await {
+                Ok(info) => info,
+                Err(e) => {
+                    return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
+                }
+            };
+            // Broadcast the new canonical player list
+            data.insert_player(node_id, &player_info).await?;
+            // The `insert_player` will trigger a `player_entry` event, which will
+            // in turn trigger the `LobbyUpdated` event. So we don't need to return anything here.
+            return Ok(None);
+        } else if let Some(node_id) = entry.is_action_request() {
+            let node_id = node_id?;
+            // Ensure we have a state to apply the action to
+            let current_state = &mut data.get_game_state().await?;
+
+            match data.parse::<G::GameAction>(&entry).await {
+                Ok(action) => {
+                    // Apply the game logic and broadcast the new authoritative state
+                    match logic.apply_action(current_state, &node_id, &action) {
+                        Err(e) => {
+                            let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                            return Err(anyhow!("Invalid action from {player}: {e}"));
+                        }
+                        Ok(()) => data.set_game_state(current_state).await?,
+                    };
+                }
+                Err(e) => {
+                    let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                    return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
+                }
+            }
+        }
+    }
     // --- ALL-PLAYERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
@@ -102,45 +142,6 @@ async fn process_entry<G: GameLogic>(
             Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
             Ok(app_state) => Ok(Some(GameEvent::AppStateChanged(app_state))),
         };
-    }
-
-    // --- HOST-ONLY LOGIC ---
-    if !data.is_host().await? {
-        return Ok(None);
-    }
-    if let Some(node_id) = entry.is_join() {
-        let node_id = node_id?;
-        // A player has joined the game room.
-        // Get the PlayerInfo payload
-        let player_info = match data.parse::<PlayerInfo>(&entry).await {
-            Ok(info) => info,
-            Err(e) => {
-                return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
-            }
-        };
-        // Broadcast the new canonical player list
-        data.insert_player(node_id, &player_info).await?;
-    } else if let Some(node_id) = entry.is_action_request() {
-        let node_id = node_id?;
-        // Ensure we have a state to apply the action to
-        let current_state = &mut data.get_game_state().await?;
-
-        match data.parse::<G::GameAction>(&entry).await {
-            Ok(action) => {
-                // Apply the game logic and broadcast the new authoritative state
-                match logic.apply_action(current_state, &node_id, &action) {
-                    Err(e) => {
-                        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                        return Err(anyhow!("Invalid action from {player}: {e}"));
-                    }
-                    Ok(()) => data.set_game_state(current_state).await?,
-                };
-            }
-            Err(e) => {
-                let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
-            }
-        }
     }
 
     Ok(None)
