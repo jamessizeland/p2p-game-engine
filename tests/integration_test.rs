@@ -35,7 +35,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Announcing Host Presence");
     host_room.announce_presence(host_name).await?;
     let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event:?}");
+    println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
         GameEvent::LobbyUpdated(players) => {
@@ -60,7 +60,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Host should receive the lobby update
     println!("Waiting for Host Lobby Update...");
     let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event:?}");
+    println!("Received Host Lobby Update: {event}");
     let client_id = client_room.id();
     match event {
         GameEvent::LobbyUpdated(players) => {
@@ -85,7 +85,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Client should first receive the lobby update and the initial lobby state
     for _ in 0..3 {
         let event = await_event(&mut client_events).await?;
-        println!("event: {event:?}");
+        println!("event: {event}");
         match event {
             GameEvent::LobbyUpdated(_) => { /* Good */ }
             GameEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
@@ -106,11 +106,11 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Client should receive a GameStarted and a GameState Updated event.
     for _ in 0..2 {
         let event = await_event(&mut client_events).await?;
-        println!("event: {event:?}");
+        println!("event: {event}");
         match event {
             GameEvent::AppStateChanged(AppState::InGame) => { /* Good */ }
             GameEvent::StateUpdated(TestGameState { counter: 0 }) => { /* Good */ }
-            _ => panic!("Client received wrong event type, got: {event:?}"),
+            _ => panic!("Client received wrong event type, got: {event}"),
         }
     }
 
@@ -130,7 +130,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
 
     match event {
         GameEvent::StateUpdated(TestGameState { counter: 1 }) => { /* Good */ }
-        _ => panic!("Client received wrong event after action: {event:?}"),
+        _ => panic!("Client received wrong event after action: {event}"),
     }
 
     // Query the final state

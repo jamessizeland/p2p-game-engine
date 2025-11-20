@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow};
 use iroh_blobs::Hash;
 use iroh_docs::{ContentStatus, engine::LiveEvent, sync::Entry};
 use n0_future::StreamExt as _;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 /// Public events your library will send to the game UI
@@ -18,6 +18,19 @@ pub enum GameEvent<G: GameLogic> {
     ChatReceived { id: PlayerInfo, msg: ChatMessage },
     HostDisconnected,
     Error(String),
+}
+
+impl<G: GameLogic> Display for GameEvent<G> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameEvent::LobbyUpdated(players) => write!(f, "LobbyUpdated({players})"),
+            GameEvent::StateUpdated(state) => write!(f, "StateUpdated({state:?})"),
+            GameEvent::AppStateChanged(state) => write!(f, "AppStateChanged({state:?})"),
+            GameEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
+            GameEvent::HostDisconnected => write!(f, "HostDisconnected"),
+            GameEvent::Error(msg) => write!(f, "Error({msg})"),
+        }
+    }
 }
 
 impl<G: GameLogic> GameRoom<G> {
@@ -62,50 +75,63 @@ async fn process_entry<G: GameLogic>(
     logic: &Arc<G>,
 ) -> Result<Option<GameEvent<G>>> {
     let is_host = data.is_host().await?;
-    println!(
-        ">> {} >> Processing entry: {:?}",
-        if is_host { "HOST" } else { "CLIENT" },
-        String::from_utf8_lossy(entry.key())
-    );
-    // --- HOST LOGIC ---
-    if data.is_host().await? {
-        if let Some(node_id) = entry.is_join() {
-            let node_id = node_id?;
-            // A player has joined the game room.
-            // Get the PlayerInfo payload
-            let player_info = match data.parse::<PlayerInfo>(&entry).await {
-                Ok(info) => info,
-                Err(e) => {
-                    return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
-                }
-            };
-            // Broadcast the new canonical player list
-            data.insert_player(node_id, &player_info).await?;
-            // The `insert_player` will trigger a `player_entry` event, which will
-            // in turn trigger the `LobbyUpdated` event. So we don't need to return anything here.
-            return Ok(None);
-        } else if let Some(node_id) = entry.is_action_request() {
-            let node_id = node_id?;
-            // Ensure we have a state to apply the action to
-            let current_state = &mut data.get_game_state().await?;
 
-            match data.parse::<G::GameAction>(&entry).await {
-                Ok(action) => {
-                    // Apply the game logic and broadcast the new authoritative state
-                    match logic.apply_action(current_state, &node_id, &action) {
-                        Err(e) => {
-                            let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                            return Err(anyhow!("Invalid action from {player}: {e}"));
-                        }
-                        Ok(()) => data.set_game_state(current_state).await?,
-                    };
-                }
-                Err(e) => {
-                    let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                    return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
-                }
+    #[cfg(debug_assertions)]
+    {
+        let mut key = String::from_utf8_lossy(entry.key()).to_string();
+        key.truncate(15);
+        println!(
+            ">> {} >> Processing entry: {key}",
+            if is_host { "HOST" } else { "CLIENT" },
+        );
+    }
+
+    // --- HOST LOGIC ---
+    if let Some(node_id) = entry.is_join() {
+        if !is_host {
+            return Ok(None);
+        }
+        let node_id = node_id?;
+        // A player has joined the game room.
+        // Get the PlayerInfo payload
+        let player_info = match data.parse::<PlayerInfo>(&entry).await {
+            Ok(info) => info,
+            Err(e) => {
+                return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
+            }
+        };
+        // Broadcast the new canonical player list
+        data.insert_player(node_id, &player_info).await?;
+        // The `insert_player` will trigger a `player_entry` live event, which will
+        // in turn trigger the `LobbyUpdated` ui event. So we don't need to return anything here.
+        return Ok(None);
+    } else if let Some(node_id) = entry.is_action_request() {
+        if !is_host {
+            return Ok(None);
+        }
+        let node_id = node_id?;
+        // Ensure we have a state to apply the action to
+        let current_state = &mut data.get_game_state().await?;
+
+        match data.parse::<G::GameAction>(&entry).await {
+            Ok(action) => {
+                // Apply the game logic and broadcast the new authoritative state
+                match logic.apply_action(current_state, &node_id, &action) {
+                    Err(e) => {
+                        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                        return Err(anyhow!("Invalid action from {player}: {e}"));
+                    }
+                    Ok(()) => data.set_game_state(current_state).await?,
+                };
+            }
+            Err(e) => {
+                let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+                return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
             }
         }
+        // The `set_game_state`` will trigger a `game_state_update` live event, which will
+        // in turn trigger the `StateUpdated` ui event. So we don't need to return anything here.
+        return Ok(None);
     }
     // --- ALL-PLAYERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
@@ -117,12 +143,6 @@ async fn process_entry<G: GameLogic>(
                 id: player.clone(),
                 msg,
             })),
-        };
-    } else if entry.is_players_update() {
-        // The player map has been updated by the host.
-        return match data.parse::<PlayerMap>(&entry).await {
-            Err(e) => Err(anyhow!("Failed to parse PlayerMap: {e}")),
-            Ok(players) => Ok(Some(GameEvent::LobbyUpdated(players))),
         };
     } else if entry.is_player_entry() {
         // A player entry has been added/updated. Fetch the whole list to signal an update.
@@ -143,6 +163,7 @@ async fn process_entry<G: GameLogic>(
             Ok(app_state) => Ok(Some(GameEvent::AppStateChanged(app_state))),
         };
     }
+    println!("unexpected event {}", String::from_utf8_lossy(entry.key()));
 
     Ok(None)
 }
@@ -167,6 +188,10 @@ fn parse_live_event(event: LiveEvent, pending_entries: &mut HashMap<Hash, Entry>
             None
         }
         LiveEvent::ContentReady { hash } => pending_entries.remove(&hash),
-        _other => None,
+        _other => {
+            #[cfg(debug_assertions)]
+            println!("LIVE_EVENT >>> {_other:?}");
+            None
+        }
     }
 }

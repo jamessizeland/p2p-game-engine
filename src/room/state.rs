@@ -19,7 +19,6 @@ use crate::{GameLogic, Iroh};
 // --- Key Prefixes ---
 pub(self) const KEY_APP_STATE: &[u8] = b"app_state";
 pub(self) const KEY_HOST_ID: &[u8] = b"host_id";
-pub(self) const KEY_PLAYERS: &[u8] = b"players";
 pub(self) const KEY_GAME_STATE: &[u8] = b"game_state";
 pub(self) const PREFIX_JOIN: &[u8] = b"join_request.";
 pub(self) const PREFIX_QUIT: &[u8] = b"quit_request.";
@@ -94,8 +93,6 @@ pub trait GameKey {
     fn is_action_request(&self) -> Option<Result<EndpointId>>;
     /// This entry is a chat message, return the ID of the sender.
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
-    /// Player map has updated
-    fn is_players_update(&self) -> bool;
     /// A player entry has been updated
     fn is_player_entry(&self) -> bool;
     /// Game State has updated
@@ -130,9 +127,6 @@ impl GameKey for Entry {
         // The key is "chat.<timestamp>.<id>", so we split and take the last part.
         let key_str = String::from_utf8_lossy(self.key());
         key_str.split('.').last().map(endpoint_id_from_str)
-    }
-    fn is_players_update(&self) -> bool {
-        self.key() == KEY_PLAYERS
     }
     fn is_player_entry(&self) -> bool {
         self.key().starts_with(PREFIX_PLAYER)
