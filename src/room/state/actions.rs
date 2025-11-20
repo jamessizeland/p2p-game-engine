@@ -47,10 +47,7 @@ impl<G: GameLogic> StateData<G> {
     /// Remove a player from the players list
     pub async fn remove_player(&self, player_id: &EndpointId) -> Result<()> {
         let key = format!("{}{}", std::str::from_utf8(PREFIX_PLAYER)?, player_id);
-        self.doc
-            .del(self.author_id, key.as_bytes().to_vec())
-            .await?;
-        Ok(())
+        self.delete_bytes(&key.into_bytes()).await
     }
 
     /// Announce that we have left the room, and why.
@@ -83,6 +80,11 @@ impl<G: GameLogic> StateData<G> {
         self.doc
             .set_bytes(self.author_id, key.to_vec(), value.to_vec())
             .await?;
+        Ok(())
+    }
+    /// Remove the state data for a particular key
+    async fn delete_bytes(&self, key: &[u8]) -> Result<()> {
+        self.doc.del(self.author_id, key.to_vec()).await?;
         Ok(())
     }
 }
