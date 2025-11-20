@@ -19,14 +19,12 @@ use crate::{GameLogic, Iroh};
 // --- Key Prefixes ---
 pub(self) const KEY_APP_STATE: &[u8] = b"app_state";
 pub(self) const KEY_HOST_ID: &[u8] = b"host_id";
-pub(self) const KEY_PLAYERS: &[u8] = b"players";
 pub(self) const KEY_GAME_STATE: &[u8] = b"game_state";
 pub(self) const PREFIX_JOIN: &[u8] = b"join_request.";
 pub(self) const PREFIX_QUIT: &[u8] = b"quit_request.";
 pub(self) const PREFIX_ACTION: &[u8] = b"action.";
 pub(self) const PREFIX_CHAT: &[u8] = b"chat.";
-#[allow(unused)]
-pub(self) const PREFIX_PLAYER_READY: &[u8] = b"player_ready.";
+pub(self) const PREFIX_PLAYER: &[u8] = b"player.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
@@ -95,12 +93,16 @@ pub trait GameKey {
     fn is_action_request(&self) -> Option<Result<EndpointId>>;
     /// This entry is a chat message, return the ID of the sender.
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
-    /// Player map has updated
-    fn is_players_update(&self) -> bool;
+    /// A player entry has been updated
+    fn is_player_entry(&self) -> bool;
     /// Game State has updated
     fn is_game_state_update(&self) -> bool;
     /// App State has updated
     fn is_app_state_update(&self) -> bool;
+}
+
+fn endpoint_id_from_str(id: &str) -> Result<EndpointId> {
+    EndpointId::from_str(id).map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err))
 }
 
 impl GameKey for Entry {
@@ -109,20 +111,14 @@ impl GameKey for Entry {
             return None;
         }
         let id = String::from_utf8_lossy(&self.key()[PREFIX_JOIN.len()..]);
-        Some(
-            EndpointId::from_str(&id)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err)),
-        )
+        Some(endpoint_id_from_str(&id))
     }
     fn is_action_request(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_ACTION) {
             return None;
         }
         let id = String::from_utf8_lossy(&self.key()[PREFIX_ACTION.len()..]);
-        Some(
-            EndpointId::from_str(&id)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err)),
-        )
+        Some(endpoint_id_from_str(&id))
     }
     fn is_chat_message(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_CHAT) {
@@ -130,17 +126,10 @@ impl GameKey for Entry {
         }
         // The key is "chat.<timestamp>.<id>", so we split and take the last part.
         let key_str = String::from_utf8_lossy(self.key());
-        let Some(id_str) = key_str.split('.').last() else {
-            return None;
-        };
-
-        Some(
-            EndpointId::from_str(id_str)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", key_str, err)),
-        )
+        key_str.split('.').last().map(endpoint_id_from_str)
     }
-    fn is_players_update(&self) -> bool {
-        self.key() == KEY_PLAYERS
+    fn is_player_entry(&self) -> bool {
+        self.key().starts_with(PREFIX_PLAYER)
     }
     fn is_game_state_update(&self) -> bool {
         self.key() == KEY_GAME_STATE

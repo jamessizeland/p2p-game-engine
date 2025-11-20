@@ -58,7 +58,6 @@ impl<G: GameLogic> GameRoom<G> {
 
         // Host immediately sets the initial lobby state and its own ID.
         state.set_app_state(&AppState::Lobby).await?;
-        state.set_player_list(&Default::default()).await?;
         state.claim_host().await?;
         let mut room = GameRoom {
             state: Arc::new(state),
