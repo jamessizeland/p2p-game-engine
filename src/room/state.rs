@@ -104,26 +104,24 @@ pub trait GameKey {
     fn is_app_state_update(&self) -> bool;
 }
 
+fn endpoint_id_from_str(id: &str) -> Result<EndpointId> {
+    EndpointId::from_str(id).map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err))
+}
+
 impl GameKey for Entry {
     fn is_join(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_JOIN) {
             return None;
         }
         let id = String::from_utf8_lossy(&self.key()[PREFIX_JOIN.len()..]);
-        Some(
-            EndpointId::from_str(&id)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err)),
-        )
+        Some(endpoint_id_from_str(&id))
     }
     fn is_action_request(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_ACTION) {
             return None;
         }
         let id = String::from_utf8_lossy(&self.key()[PREFIX_ACTION.len()..]);
-        Some(
-            EndpointId::from_str(&id)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err)),
-        )
+        Some(endpoint_id_from_str(&id))
     }
     fn is_chat_message(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_CHAT) {
@@ -131,14 +129,7 @@ impl GameKey for Entry {
         }
         // The key is "chat.<timestamp>.<id>", so we split and take the last part.
         let key_str = String::from_utf8_lossy(self.key());
-        let Some(id_str) = key_str.split('.').last() else {
-            return None;
-        };
-
-        Some(
-            EndpointId::from_str(id_str)
-                .map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", key_str, err)),
-        )
+        key_str.split('.').last().map(endpoint_id_from_str)
     }
     fn is_players_update(&self) -> bool {
         self.key() == KEY_PLAYERS
