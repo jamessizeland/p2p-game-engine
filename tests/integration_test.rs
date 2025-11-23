@@ -5,7 +5,6 @@ use anyhow::Result;
 use p2p_game_engine::AppState;
 use p2p_game_engine::GameRoom;
 use p2p_game_engine::UiEvent;
-use std::path::Path;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
@@ -19,14 +18,8 @@ async fn await_event(event: &mut mpsc::Receiver<UiEvent<TestGame>>) -> Result<Ui
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
-    let host_dir = Path::new("./temp/host/");
-    tokio::fs::create_dir_all(&host_dir).await?;
-    let client_dir = Path::new("./temp/client/");
-    tokio::fs::create_dir_all(&client_dir).await?;
-
     println!("Setting up Host Room");
-    let (host_room, mut host_events) =
-        GameRoom::create_with_random_port(TestGame, host_dir.to_path_buf()).await?;
+    let (host_room, mut host_events) = GameRoom::create(TestGame, None).await?;
     let ticket_string = host_room.ticket().to_string();
     println!("Host Ticket: {}", &ticket_string);
 
@@ -46,8 +39,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     }
 
     println!("Setting up Client Room");
-    let (client_room, mut client_events) =
-        GameRoom::join_with_random_port(TestGame, ticket_string, client_dir.to_path_buf()).await?;
+    let (client_room, mut client_events) = GameRoom::join(TestGame, ticket_string, None).await?;
 
     // --- LOBBY PHASE ---
 

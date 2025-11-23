@@ -270,7 +270,7 @@ async fn main() -> Result<()> {
     // --- Setup Room ---
     let (room, mut events) = match cli.command {
         Commands::Host => {
-            let (room, events) = GameRoom::create(TicTacToeLogic, data_path).await?;
+            let (room, events) = GameRoom::create(TicTacToeLogic, Some(data_path)).await?;
             println!("Game hosted! Your ID: {}", room.id());
             println!("Ticket: {}", room.ticket());
             print!("Enter your name: ");
@@ -283,7 +283,7 @@ async fn main() -> Result<()> {
             (room, events)
         }
         Commands::Join { ticket } => {
-            let (room, events) = GameRoom::join(TicTacToeLogic, ticket, data_path).await?;
+            let (room, events) = GameRoom::join(TicTacToeLogic, ticket, Some(data_path)).await?;
             println!("Joined game! Your ID: {}", room.id());
             print!("Enter your name: ");
             io::stdout().flush()?;

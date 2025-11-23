@@ -56,12 +56,11 @@ pub struct StateData<G: GameLogic> {
 
 impl<G: GameLogic> StateData<G> {
     /// Create a new StateData instance
-    pub async fn new(
-        store_path: PathBuf,
-        ticket: Option<String>,
-        use_random_port: bool,
-    ) -> Result<Self> {
-        let iroh = Iroh::new(store_path, use_random_port).await?;
+    pub async fn new(store_path: Option<PathBuf>, ticket: Option<String>) -> Result<Self> {
+        let iroh = match store_path {
+            None => Iroh::memory().await?,
+            Some(store_path) => Iroh::persistent(store_path).await?,
+        };
         let author_id = iroh.get_default_author().await?;
         let endpoint_id = iroh.endpoint().id();
 
