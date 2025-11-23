@@ -21,6 +21,7 @@ pub enum UiEvent<G: GameLogic> {
     StateUpdated(G::GameState),
     AppStateChanged(AppState),
     ChatReceived { id: PlayerInfo, msg: ChatMessage },
+    HostSet { id: PlayerInfo },
     HostDisconnected,
     Error(String), // TODO replace with AppError including G::GameError
 }
@@ -32,6 +33,7 @@ impl<G: GameLogic> Display for UiEvent<G> {
             UiEvent::StateUpdated(state) => write!(f, "StateUpdated({state:?})"),
             UiEvent::AppStateChanged(state) => write!(f, "AppStateChanged({state:?})"),
             UiEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
+            UiEvent::HostSet { id } => write!(f, "HostSet({id})"),
             UiEvent::HostDisconnected => write!(f, "HostDisconnected"),
             UiEvent::Error(msg) => write!(f, "Error({msg})"),
         }
@@ -169,9 +171,18 @@ async fn process_entry<G: GameLogic>(
             Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
             Ok(app_state) => Ok(Some(UiEvent::AppStateChanged(app_state))),
         };
+    } else if entry.is_host_update() {
+        // The host has been claimed/reasigned.
+        return match data.iroh.get_content_bytes(entry).await {
+            Err(e) => Err(anyhow!("Failed to parse HostId: {e}")),
+            Ok(host_id) => {
+                let host_id = endpoint_id_from_str(&String::from_utf8_lossy(&host_id))?;
+                let player = data.get_player_info(&host_id).await?.unwrap_or_default();
+                Ok(Some(UiEvent::HostSet { id: player }))
+            }
+        };
     }
-    println!("unexpected event {}", String::from_utf8_lossy(entry.key()));
-
+    println!("unknown event: {entry:?}");
     Ok(None)
 }
 

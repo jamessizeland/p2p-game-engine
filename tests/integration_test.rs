@@ -1,21 +1,19 @@
+//! This is the basic test for setting up rooms and exchanging basic information between them.
+
 mod common;
 use common::*;
-use p2p_game_engine::{AppState, UiEvent};
+use p2p_game_engine::*;
 
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
-    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room().await?;
+    let host_name = "HostPlayer";
+    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room(host_name).await?;
 
-    let (client_room, mut client_events) = join_test_room(&ticket_string, 3).await?;
+    let client_name = "ClientPlayer";
+    let (client_room, mut client_events) = join_test_room(client_name, &ticket_string, 3).await?;
 
     // --- LOBBY PHASE ---
-
-    // Client announces their presence
-    let client_name = "ClientPlayer";
-    println!("Announcing Client Presence");
-    client_room.announce_presence(client_name).await?;
-
     // Host should receive the lobby update
     println!("Waiting for Host Lobby Update...");
     let event = await_event(&mut host_events).await?;
@@ -42,12 +40,15 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Host direct query successful.");
 
     // Client should first receive the lobby update and the initial lobby state
-    for _ in 0..3 {
+    for _ in 0..4 {
         let event = await_event(&mut client_events).await?;
         println!("event: {event}");
         match event {
             UiEvent::LobbyUpdated(_) => { /* Good */ }
             UiEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
+            UiEvent::HostSet { id } => {
+                assert_eq!(id.name, host_name);
+            }
             other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }
     }

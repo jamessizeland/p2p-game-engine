@@ -79,7 +79,9 @@ pub async fn await_event(
         .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
 }
 
-pub async fn setup_test_room() -> anyhow::Result<(
+pub async fn setup_test_room(
+    name: &str,
+) -> anyhow::Result<(
     GameRoom<TestGame>,
     String,
     EndpointId,
@@ -90,9 +92,8 @@ pub async fn setup_test_room() -> anyhow::Result<(
     let ticket_string = host_room.ticket().to_string();
     println!("Host Ticket: {}", &ticket_string);
 
-    let host_name = "HostPlayer";
     println!("Announcing Host Presence");
-    host_room.announce_presence(host_name).await?;
+    host_room.announce_presence(name).await?;
     let event = await_event(&mut host_events).await?;
     println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
@@ -100,7 +101,7 @@ pub async fn setup_test_room() -> anyhow::Result<(
         UiEvent::LobbyUpdated(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
-            assert_eq!(players.get(&host_id).unwrap().name, host_name);
+            assert_eq!(players.get(&host_id).unwrap().name, name);
         }
         _ => panic!("Host received wrong event type"),
     }
@@ -108,6 +109,7 @@ pub async fn setup_test_room() -> anyhow::Result<(
 }
 
 pub async fn join_test_room(
+    name: &str,
     ticket_string: &str,
     mut retries: i32,
 ) -> anyhow::Result<(GameRoom<TestGame>, mpsc::Receiver<UiEvent<TestGame>>)> {
@@ -126,5 +128,6 @@ pub async fn join_test_room(
             }
         }
     };
+    client_room.announce_presence(name).await?;
     Ok((client_room, client_events))
 }

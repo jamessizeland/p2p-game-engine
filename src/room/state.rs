@@ -103,9 +103,11 @@ pub trait GameKey {
     fn is_game_state_update(&self) -> bool;
     /// App State has updated
     fn is_app_state_update(&self) -> bool;
+    /// Host has updated
+    fn is_host_update(&self) -> bool;
 }
 
-fn endpoint_id_from_str(id: &str) -> Result<EndpointId> {
+pub fn endpoint_id_from_str(id: &str) -> Result<EndpointId> {
     EndpointId::from_str(id).map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err))
 }
 
@@ -140,5 +142,8 @@ impl GameKey for Entry {
     }
     fn is_app_state_update(&self) -> bool {
         self.key() == KEY_APP_STATE
+    }
+    fn is_host_update(&self) -> bool {
+        self.key() == KEY_HOST_ID
     }
 }

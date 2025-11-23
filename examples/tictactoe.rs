@@ -361,6 +361,9 @@ async fn main() -> Result<()> {
                         println!("\nGame Host disconnected. The game is over.");
                         break;
                     },
+                    UiEvent::HostSet {id } => {
+                        println!("\nGame Host assigned to: {id}")
+                    }
                 }
             }
             else => {
