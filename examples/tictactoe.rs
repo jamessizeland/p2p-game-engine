@@ -19,7 +19,7 @@
 use anyhow::Result;
 use clap::Parser;
 use iroh::EndpointId;
-use p2p_game_engine::{GameEvent, GameLogic, GameRoom, PlayerMap};
+use p2p_game_engine::{GameLogic, GameRoom, PlayerMap, UiEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -338,10 +338,10 @@ async fn main() -> Result<()> {
             // Handle game events
             Some(event) = events.recv() => {
                 match event {
-                    GameEvent::LobbyUpdated(players) => {
+                    UiEvent::LobbyUpdated(players) => {
                         println!("\nLobby updated. Players now: {:?}", players.values().map(|p|&p.name).collect::<Vec<_>>());
                     }
-                    GameEvent::StateUpdated(state) => {
+                    UiEvent::StateUpdated(state) => {
                         if let Some(role) = state.roles.get(&room.id()) {
                             println!("\nGame state updated! Your role is: {role}");
                         } else {
@@ -349,15 +349,15 @@ async fn main() -> Result<()> {
                         }
                         print_board(&state);
                     },
-                    GameEvent::ChatReceived{id, msg} => {
+                    UiEvent::ChatReceived{id, msg} => {
                         let from = if msg.from == room.id() { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
                         println!("\n[Chat] {}: {}\n{}", id.name, msg.message, msg.from);
                     }
-                    GameEvent::Error(e) => eprintln!("\nAn error occurred: {}", e),
-                    GameEvent::AppStateChanged(app_state) => {
+                    UiEvent::Error(e) => eprintln!("\nAn error occurred: {}", e),
+                    UiEvent::AppStateChanged(app_state) => {
                         println!("\nGame state changed to: {:?}", app_state);
                     }
-                    GameEvent::HostDisconnected => {
+                    UiEvent::HostDisconnected => {
                         println!("\nGame Host disconnected. The game is over.");
                         break;
                     },

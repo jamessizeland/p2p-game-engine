@@ -56,20 +56,25 @@ pub struct StateData<G: GameLogic> {
 
 impl<G: GameLogic> StateData<G> {
     /// Create a new StateData instance
-    pub async fn new(store_path: PathBuf, ticket: Option<String>) -> Result<Self> {
-        let iroh = Iroh::new(store_path).await?;
+    pub async fn new(
+        store_path: PathBuf,
+        ticket: Option<String>,
+        use_random_port: bool,
+    ) -> Result<Self> {
+        let iroh = Iroh::new(store_path, use_random_port).await?;
+        let author_id = iroh.get_default_author().await?;
         let endpoint_id = iroh.endpoint().id();
-        let (ticket, doc, author_id) = if let Some(ticket_str) = ticket {
+
+        let (ticket, doc) = if let Some(ticket_str) = ticket {
             let ticket = DocTicket::from_str(&ticket_str)?;
             let doc = iroh.docs().import(ticket.clone()).await?;
-            let author_id = iroh.setup_author(&doc.id()).await?;
-            (ticket, doc, author_id)
+            (ticket, doc)
         } else {
             let doc = iroh.docs().create().await?;
-            let author_id = iroh.setup_author(&doc.id()).await?;
             let ticket = doc.share(ShareMode::Write, Default::default()).await?;
-            (ticket, doc, author_id)
+            (ticket, doc)
         };
+
         Ok(Self {
             phantom: PhantomData,
             endpoint_id,

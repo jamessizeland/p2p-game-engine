@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::{
+    net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6},
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use iroh::SecretKey;
 use iroh::protocol::Router;
 use iroh_blobs::{ALPN as BLOBS_ALPN, BlobsProtocol, api::blobs::Blobs, store::fs::FsStore};
-use iroh_docs::{ALPN as DOCS_ALPN, AuthorId, NamespaceId, protocol::Docs};
+use iroh_docs::{ALPN as DOCS_ALPN, AuthorId, protocol::Docs};
 use iroh_gossip::{ALPN as GOSSIP_ALPN, net::Gossip};
 use serde::de::DeserializeOwned;
 use tokio::io::AsyncWriteExt;
@@ -20,12 +23,19 @@ pub struct Iroh {
 
 impl Iroh {
     /// Create a new Iroh Doc service.
-    pub async fn new(path: PathBuf) -> Result<Self> {
+    pub async fn new(path: PathBuf, use_random_port: bool) -> Result<Self> {
         // create dir if it doesn't already exist
         tokio::fs::create_dir_all(&path).await?;
 
         let key = load_secret_key(path.clone().join("keypair")).await?;
-        let endpoint = iroh::Endpoint::builder().secret_key(key).bind().await?;
+        let mut builder = iroh::Endpoint::builder().secret_key(key);
+        if use_random_port {
+            let v4 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+            let v6 = SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0);
+            builder = builder.bind_addr_v4(v4).bind_addr_v6(v6);
+        }
+        let endpoint = builder.bind().await?;
+
         let gossip = Gossip::builder().spawn(endpoint.clone());
         let blobs = FsStore::load(&path).await?;
         let docs = Docs::persistent(path.clone())
@@ -46,23 +56,23 @@ impl Iroh {
         })
     }
 
-    /// Retrieve or create an AuthorId
-    ///
-    /// Check if we have a saved AuthorId for this document to rejoin.
-    pub async fn setup_author(&self, doc_id: &NamespaceId) -> Result<AuthorId> {
-        let author_path = self.path.join(format!("{}.author", doc_id));
+    /// Retrieve or create a persistent Default Author for this node
+    pub async fn get_default_author(&self) -> Result<AuthorId> {
+        // Use a fixed filename so we reuse the identity across different games
+        let author_path = self.path.join("default.author");
+
         if author_path.exists() {
             let bytes = tokio::fs::read(&author_path).await?;
-            let author =
-                iroh_docs::Author::from_bytes(&bytes.as_slice().try_into().map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid author file, expected 64 bytes, got {}",
-                        bytes.len()
-                    )
-                })?);
-            let existing_author = author.id();
-            self.docs().author_import(author).await?;
-            Ok(existing_author)
+            let author = iroh_docs::Author::from_bytes(
+                &bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| anyhow::anyhow!("Invalid author file"))?,
+            );
+
+            // Import the author into the internal docs store to make it active
+            self.docs().author_import(author.clone()).await?;
+            Ok(author.id())
         } else {
             let new_author = self.docs().author_create().await?;
             let Some(persisting_author) = self.docs().author_export(new_author).await? else {

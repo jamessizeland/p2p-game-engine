@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
-pub use events::GameEvent;
+pub use events::UiEvent;
 pub use state::{AppState, StateData};
 
 pub struct GameRoom<G: GameLogic> {
@@ -21,6 +21,7 @@ pub struct GameRoom<G: GameLogic> {
     pub(self) state: Arc<StateData<G>>,
     /// Game logic
     pub(self) logic: Arc<G>,
+    /// UI event loop handle
     pub(self) event_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -49,42 +50,40 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn ticket(&self) -> &DocTicket {
         &self.ticket
     }
+    /// Create a new game room with a random port (useful for testing on same device)
+    pub async fn create_with_random_port(
+        logic: G,
+        save_path: PathBuf,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        Self::create_inner(logic, save_path, true).await
+    }
+
     /// Create a new game room
     pub async fn create(
         logic: G,
         save_path: PathBuf,
-    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
-        let state = StateData::new(save_path, None).await?;
-
-        // Host immediately sets the initial lobby state and its own ID.
-        state.set_app_state(&AppState::Lobby).await?;
-        state.claim_host().await?;
-        let mut room = GameRoom {
-            state: Arc::new(state),
-            logic: Arc::new(logic),
-            event_handle: None,
-        };
-        let (event_inbox, event_handle) = room.start_event_loop().await?;
-        room.event_handle = Some(event_handle);
-        Ok((room, event_inbox))
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        Self::create_inner(logic, save_path, false).await
     }
+
+    /// Join an existing game room with a random port (useful for testing on same device)
+    pub async fn join_with_random_port(
+        logic: G,
+        ticket: String,
+        save_path: PathBuf,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        Self::join_inner(logic, ticket, save_path, true).await
+    }
+
     /// Join an existing game room
     pub async fn join(
         logic: G,
         ticket: String,
         save_path: PathBuf,
-    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
-        // TODO establish that this ticket matches the game we expect.
-        let state = StateData::new(save_path, Some(ticket)).await?;
-        let mut room = GameRoom {
-            state: Arc::new(state),
-            logic: Arc::new(logic),
-            event_handle: None,
-        };
-        let (event_inbox, event_handle) = room.start_event_loop().await?;
-        room.event_handle = Some(event_handle);
-        Ok((room, event_inbox))
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        Self::join_inner(logic, ticket, save_path, false).await
     }
+
     /// Start the Game
     pub async fn start_game(&self) -> Result<()> {
         if !self.is_host().await? {
@@ -104,5 +103,46 @@ impl<G: GameLogic> GameRoom<G> {
         self.set_game_state(&initial_state).await?;
         self.set_app_state(&AppState::InGame).await?;
         Ok(())
+    }
+}
+
+impl<G: GameLogic> GameRoom<G> {
+    fn new(state: StateData<G>, logic: G) -> Self {
+        Self {
+            state: Arc::new(state),
+            logic: Arc::new(logic),
+            event_handle: None,
+        }
+    }
+    async fn create_inner(
+        logic: G,
+        save_path: PathBuf,
+        use_random_port: bool,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        let state = StateData::new(save_path, None, use_random_port).await?;
+
+        // Host immediately sets the initial lobby state and its own ID.
+        state.set_app_state(&AppState::Lobby).await?;
+        state.claim_host().await?;
+
+        let mut room = Self::new(state, logic);
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
+    }
+
+    async fn join_inner(
+        logic: G,
+        ticket: String,
+        save_path: PathBuf,
+        use_random_port: bool,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        // TODO establish that this ticket matches the game we expect.
+        let state = StateData::new(save_path, Some(ticket), use_random_port).await?;
+
+        let mut room = Self::new(state, logic);
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
     }
 }
