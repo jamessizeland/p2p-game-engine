@@ -12,7 +12,7 @@ use iroh_blobs::{
     api::{Store, blobs::Blobs},
     store::{fs::FsStore, mem::MemStore},
 };
-use iroh_docs::{ALPN as DOCS_ALPN, AuthorId, protocol::Docs};
+use iroh_docs::{ALPN as DOCS_ALPN, protocol::Docs};
 use iroh_gossip::{ALPN as GOSSIP_ALPN, net::Gossip};
 use serde::de::DeserializeOwned;
 
@@ -60,10 +60,7 @@ impl Iroh {
             .bind()
             .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
-        // Setup Memory Store
         let blobs_store: Store = MemStore::new().into();
-
-        // Setup Memory Docs
         let docs = Docs::memory()
             .spawn(endpoint.clone(), blobs_store.clone(), gossip.clone())
             .await?;
@@ -80,9 +77,7 @@ impl Iroh {
         // Bind to default port 11204, or fail if taken (standard app behavior)
         let endpoint = iroh::Endpoint::builder().secret_key(key).bind().await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
-        // Setup Persistent Store
         let blobs_store: Store = FsStore::load(&path).await?.into();
-        // Setup Persistent Docs
         let docs = Docs::persistent(path.clone())
             .spawn(endpoint.clone(), blobs_store.clone(), gossip.clone())
             .await?;
@@ -90,41 +85,17 @@ impl Iroh {
         Self::build(endpoint, blobs_store, docs, gossip, Some(path)).await
     }
 
-    /// Retrieve or create a persistent Default Author for this node
-    pub async fn get_default_author(&self) -> Result<AuthorId> {
-        // Use a fixed filename so we reuse the identity across different games
-        let Some(root) = &self.path else {
-            return Ok(self.docs().author_create().await?);
-        };
-        let author_path = root.join("default.author");
-        if author_path.exists() {
-            let bytes = tokio::fs::read(&author_path).await?;
-            let author = iroh_docs::Author::from_bytes(
-                &bytes
-                    .as_slice()
-                    .try_into()
-                    .map_err(|_| anyhow::anyhow!("Invalid author file"))?,
-            );
-            // Import the author into the internal docs store to make it active
-            self.docs().author_import(author.clone()).await?;
-            Ok(author.id())
-        } else {
-            let new_author = self.docs().author_create().await?;
-            let Some(persisting_author) = self.docs().author_export(new_author).await? else {
-                return Err(anyhow::anyhow!("failed to export author"));
-            };
-            tokio::fs::write(author_path, persisting_author.to_bytes()).await?;
-            Ok(new_author)
-        }
-    }
-
+    /// Get the persistent data store path, or None if we ware using In Memory mode.
     pub fn path(&self) -> Option<&PathBuf> {
         self.path.as_ref()
     }
 
+    /// Get the latest state of the requested entry as raw bytes
     pub async fn get_content_bytes(&self, entry: &iroh_docs::sync::Entry) -> Result<Bytes> {
         Ok(self.blobs().get_bytes(entry.content_hash()).await?)
     }
+
+    /// Get the latest state of the requested entry deserialized
     pub async fn get_content_as<'a, T: DeserializeOwned>(
         &self,
         entry: &'a iroh_docs::sync::Entry,
@@ -133,18 +104,22 @@ impl Iroh {
         Ok(postcard::from_bytes(&bytes)?)
     }
 
+    /// Get this Node's endpoint
     pub fn endpoint(&self) -> &iroh::Endpoint {
         self.router.endpoint()
     }
 
+    /// Get the Blobs interface
     pub fn blobs(&self) -> &Blobs {
         &self.blobs
     }
 
+    /// Get the Docs interface
     pub fn docs(&self) -> &Docs {
         &self.docs
     }
 
+    /// Shutdown this Endpoint
     pub async fn shutdown(self) -> Result<()> {
         self.router.shutdown().await?;
         Ok(())

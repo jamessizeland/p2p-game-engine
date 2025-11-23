@@ -61,7 +61,7 @@ impl<G: GameLogic> StateData<G> {
             None => Iroh::memory().await?,
             Some(store_path) => Iroh::persistent(store_path).await?,
         };
-        let author_id = iroh.get_default_author().await?;
+        let author_id = iroh.docs().author_default().await?;
         let endpoint_id = iroh.endpoint().id();
 
         let (ticket, doc) = if let Some(ticket_str) = ticket {
