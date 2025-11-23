@@ -54,7 +54,9 @@ impl DerefMut for PlayerMap {
 impl Display for PlayerMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (id, player) in self.0.iter() {
-            write!(f, "[{:?}]: '{}'\n", id, player)?;
+            let mut id = id.to_string();
+            id.truncate(10);
+            write!(f, "[{}...]: '{}'\n", id, player)?;
         }
         Ok(())
     }

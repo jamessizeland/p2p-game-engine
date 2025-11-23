@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
-pub use events::GameEvent;
+pub use events::UiEvent;
 pub use state::{AppState, StateData};
 
 pub struct GameRoom<G: GameLogic> {
@@ -21,6 +21,7 @@ pub struct GameRoom<G: GameLogic> {
     pub(self) state: Arc<StateData<G>>,
     /// Game logic
     pub(self) logic: Arc<G>,
+    /// UI event loop handle
     pub(self) event_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -41,6 +42,14 @@ impl<G: GameLogic> Deref for GameRoom<G> {
 }
 
 impl<G: GameLogic> GameRoom<G> {
+    fn new(state: StateData<G>, logic: G) -> Self {
+        Self {
+            state: Arc::new(state),
+            logic: Arc::new(logic),
+            event_handle: None,
+        }
+    }
+
     /// Get Iroh Network Endpoint ID
     pub fn id(&self) -> EndpointId {
         self.endpoint_id
@@ -49,43 +58,7 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn ticket(&self) -> &DocTicket {
         &self.ticket
     }
-    /// Create a new game room
-    pub async fn create(
-        logic: G,
-        save_path: PathBuf,
-    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
-        let state = StateData::new(save_path, None).await?;
 
-        // Host immediately sets the initial lobby state and its own ID.
-        state.set_app_state(&AppState::Lobby).await?;
-        state.set_player_list(&Default::default()).await?;
-        state.claim_host().await?;
-        let mut room = GameRoom {
-            state: Arc::new(state),
-            logic: Arc::new(logic),
-            event_handle: None,
-        };
-        let (event_inbox, event_handle) = room.start_event_loop().await?;
-        room.event_handle = Some(event_handle);
-        Ok((room, event_inbox))
-    }
-    /// Join an existing game room
-    pub async fn join(
-        logic: G,
-        ticket: String,
-        save_path: PathBuf,
-    ) -> Result<(Self, mpsc::Receiver<GameEvent<G>>)> {
-        // TODO establish that this ticket matches the game we expect.
-        let state = StateData::new(save_path, Some(ticket)).await?;
-        let mut room = GameRoom {
-            state: Arc::new(state),
-            logic: Arc::new(logic),
-            event_handle: None,
-        };
-        let (event_inbox, event_handle) = room.start_event_loop().await?;
-        room.event_handle = Some(event_handle);
-        Ok((room, event_inbox))
-    }
     /// Start the Game
     pub async fn start_game(&self) -> Result<()> {
         if !self.is_host().await? {
@@ -105,5 +78,37 @@ impl<G: GameLogic> GameRoom<G> {
         self.set_game_state(&initial_state).await?;
         self.set_app_state(&AppState::InGame).await?;
         Ok(())
+    }
+
+    /// Create a new GameRoom
+    pub async fn create(
+        logic: G,
+        store_path: Option<PathBuf>,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        let state = StateData::new(store_path, None).await?;
+
+        // Host immediately sets the initial lobby state and its own ID.
+        state.set_app_state(&AppState::Lobby).await?;
+        state.claim_host().await?;
+
+        let mut room = Self::new(state, logic);
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
+    }
+
+    /// Join a GameRoom
+    pub async fn join(
+        logic: G,
+        ticket: &str,
+        store_path: Option<PathBuf>,
+    ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
+        // TODO establish that this ticket matches the game we expect.
+        let state = StateData::new(store_path, Some(ticket.to_string())).await?;
+
+        let mut room = Self::new(state, logic);
+        let (event_inbox, event_handle) = room.start_event_loop().await?;
+        room.event_handle = Some(event_handle);
+        Ok((room, event_inbox))
     }
 }

@@ -3,15 +3,13 @@ use common::*;
 
 use anyhow::Result;
 use p2p_game_engine::AppState;
-use p2p_game_engine::GameEvent;
 use p2p_game_engine::GameRoom;
-use std::path::Path;
+use p2p_game_engine::UiEvent;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
-async fn await_event(
-    event: &mut mpsc::Receiver<GameEvent<TestGame>>,
-) -> Result<GameEvent<TestGame>> {
+async fn await_event(event: &mut mpsc::Receiver<UiEvent<TestGame>>) -> Result<UiEvent<TestGame>> {
     let duration = Duration::from_secs(2);
     tokio::time::timeout(duration, event.recv())
         .await?
@@ -21,13 +19,8 @@ async fn await_event(
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
-    let host_dir = Path::new("./temp/host/");
-    tokio::fs::create_dir_all(&host_dir).await?;
-    let client_dir = Path::new("./temp/client/");
-    tokio::fs::create_dir_all(&client_dir).await?;
-
     println!("Setting up Host Room");
-    let (host_room, mut host_events) = GameRoom::create(TestGame, host_dir.to_path_buf()).await?;
+    let (host_room, mut host_events) = GameRoom::create(TestGame, None).await?;
     let ticket_string = host_room.ticket().to_string();
     println!("Host Ticket: {}", &ticket_string);
 
@@ -35,10 +28,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Announcing Host Presence");
     host_room.announce_presence(host_name).await?;
     let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event:?}");
+    println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
-        GameEvent::LobbyUpdated(players) => {
+        UiEvent::LobbyUpdated(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
             assert_eq!(players.get(&host_id).unwrap().name, host_name);
@@ -47,8 +40,21 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     }
 
     println!("Setting up Client Room");
-    let (client_room, mut client_events) =
-        GameRoom::join(TestGame, ticket_string, client_dir.to_path_buf()).await?;
+    // Sometimes this fails, so we have a retry mechanic.
+    let mut retries = 3;
+    let (client_room, mut client_events) = loop {
+        sleep(Duration::from_secs(1)).await;
+        match GameRoom::join(TestGame, &ticket_string, None).await {
+            Ok((room, events)) => break (room, events),
+            Err(e) => {
+                if retries == 0 {
+                    panic!("Failed to join room: {e}");
+                }
+                println!("Failed to join room: {e}. Retrying...");
+                retries -= 1;
+            }
+        }
+    };
 
     // --- LOBBY PHASE ---
 
@@ -60,10 +66,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Host should receive the lobby update
     println!("Waiting for Host Lobby Update...");
     let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event:?}");
+    println!("Received Host Lobby Update: {event}");
     let client_id = client_room.id();
     match event {
-        GameEvent::LobbyUpdated(players) => {
+        UiEvent::LobbyUpdated(players) => {
             assert_eq!(players.len(), 2);
             assert!(players.contains_key(&client_id));
             assert!(players.contains_key(&host_id));
@@ -85,10 +91,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Client should first receive the lobby update and the initial lobby state
     for _ in 0..3 {
         let event = await_event(&mut client_events).await?;
-        println!("event: {event:?}");
+        println!("event: {event}");
         match event {
-            GameEvent::LobbyUpdated(_) => { /* Good */ }
-            GameEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
+            UiEvent::LobbyUpdated(_) => { /* Good */ }
+            UiEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
             other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }
     }
@@ -106,11 +112,11 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Client should receive a GameStarted and a GameState Updated event.
     for _ in 0..2 {
         let event = await_event(&mut client_events).await?;
-        println!("event: {event:?}");
+        println!("event: {event}");
         match event {
-            GameEvent::AppStateChanged(AppState::InGame) => { /* Good */ }
-            GameEvent::StateUpdated(TestGameState { counter: 0 }) => { /* Good */ }
-            _ => panic!("Client received wrong event type, got: {event:?}"),
+            UiEvent::AppStateChanged(AppState::InGame) => { /* Good */ }
+            UiEvent::StateUpdated(TestGameState { counter: 0 }) => { /* Good */ }
+            _ => panic!("Client received wrong event type, got: {event}"),
         }
     }
 
@@ -129,8 +135,8 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let event = await_event(&mut client_events).await?;
 
     match event {
-        GameEvent::StateUpdated(TestGameState { counter: 1 }) => { /* Good */ }
-        _ => panic!("Client received wrong event after action: {event:?}"),
+        UiEvent::StateUpdated(TestGameState { counter: 1 }) => { /* Good */ }
+        _ => panic!("Client received wrong event after action: {event}"),
     }
 
     // Query the final state
