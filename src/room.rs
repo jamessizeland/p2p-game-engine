@@ -14,7 +14,7 @@ use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
 pub use events::UiEvent;
-pub use state::{AppState, StateData};
+pub use state::{AppState, LeaveReason, StateData};
 
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store

@@ -10,6 +10,7 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     type GameState: Serialize + DeserializeOwned + Clone + Debug + Send + Sync;
     type GameAction: Serialize + DeserializeOwned + Clone + Debug + Send + Sync;
     type PlayerRole: Serialize + DeserializeOwned + Clone + Debug + Send + Sync;
+    type GameEndReason: Serialize + DeserializeOwned + Clone + Debug + Send + Sync;
     type GameError: Error + Send + Sync;
 
     /// Assigns roles to players at the start of the game.

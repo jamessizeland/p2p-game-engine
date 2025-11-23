@@ -125,6 +125,7 @@ impl GameLogic for TicTacToeLogic {
     type GameAction = TicTacToeAction;
     type PlayerRole = PlayerRole;
     type GameError = GameError;
+    type GameEndReason = ();
 
     fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         // The first two players become X and O. Everyone else is an observer.

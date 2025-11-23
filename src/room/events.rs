@@ -65,13 +65,28 @@ impl<G: GameLogic> GameRoom<G> {
                                 Err(e) => eprintln!("Error processing event: {e}"),
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
+                                    // Send the event to the UI
+                                    println!("UI event: {event}");
                                     if sender.send(event).await.is_err() {
                                         break; // Channel closed
                                     }
                                 }
                             },
                             NetworkEvent::Joiner(id) => println!("{id} joined the game room"),
-                            NetworkEvent::Leaver(id) => println!("{id} left the game room"),
+                            NetworkEvent::Leaver(id) => {
+                                println!("{id} left the game room");
+                                if state_data.is_peer_host(&id).await.unwrap_or(false) {
+                                    // The host has disconnected.
+                                    // Set our own state to paused and inform the UI.
+                                    state_data.set_app_state(&AppState::Paused).await.ok();
+                                    if sender.send(UiEvent::HostDisconnected).await.is_err() {
+                                        break; // Channel closed
+                                    }
+                                    if sender.send(UiEvent::AppStateChanged(AppState::Paused)).await.is_err() {
+                                        break; // Channel closed
+                                    }
+                                }
+                            },
                             NetworkEvent::SyncFailed(reason) => {
                                 let error = UiEvent::Error(format!("Sync failed: {reason}"));
                                 eprintln!("Error processing event: {error}");
@@ -95,6 +110,11 @@ async fn process_entry<G: GameLogic>(
     data: &StateData<G>,
     logic: &Arc<G>,
 ) -> Result<Option<UiEvent<G>>> {
+    #[cfg(debug_assertions)]
+    println!(
+        "processing entry: {:?}",
+        String::from_utf8_lossy(entry.key())
+    );
     // --- HOST LOGIC ---
     if let Some(node_id) = entry.is_join() {
         if !data.is_host().await? {
@@ -181,6 +201,23 @@ async fn process_entry<G: GameLogic>(
                 Ok(Some(UiEvent::HostSet { id: player }))
             }
         };
+    } else if let Some(node_id) = entry.is_quit_request() {
+        let node_id = node_id?;
+        // If we are processing our own quit request, do nothing.
+        // Let other peers handle it.
+        if node_id == data.endpoint_id {
+            return Ok(None);
+        }
+        if data.is_peer_host(&node_id).await? {
+            // The host has explicitly quit.
+            // Set our own state to paused and inform the UI.
+            data.set_app_state(&AppState::Paused).await?;
+            if let Ok(Some(_)) = data.remove_player(&node_id).await {
+                // removal will trigger LobbyUpdated
+            }
+            return Ok(Some(UiEvent::HostDisconnected));
+        }
+        // TODO: Handle non-host player leaving
     }
     println!("unknown event: {entry:?}");
     Ok(None)

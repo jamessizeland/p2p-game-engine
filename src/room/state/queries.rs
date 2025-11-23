@@ -6,9 +6,14 @@ use n0_future::StreamExt;
 impl<G: GameLogic> StateData<G> {
     /// Check the document to see if we are the host
     pub async fn is_host(&self) -> Result<bool> {
+        self.is_peer_host(&self.endpoint_id).await
+    }
+
+    /// Check the document to see if a given peer is the host
+    pub async fn is_peer_host(&self, peer_id: &EndpointId) -> Result<bool> {
         if let Some(bytes) = self.get_bytes(KEY_HOST_ID).await? {
-            let host_id = String::from_utf8_lossy(&bytes);
-            Ok(self.endpoint_id.to_string() == host_id)
+            let host_id_str = String::from_utf8_lossy(&bytes);
+            Ok(peer_id.to_string() == host_id_str)
         } else {
             Ok(false)
         }

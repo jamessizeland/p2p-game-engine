@@ -28,11 +28,18 @@ pub(self) const PREFIX_PLAYER: &[u8] = b"player.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
-pub enum LeaveReason {
+pub enum LeaveReason<G: GameLogic> {
+    /// Player has closed the application.
     ApplicationClosed,
+    /// Player has timed out.
     Timeout,
+    /// Player has chosen to end their participation in this game.
+    Forfeit,
+    /// Something has gone wrong and an error has been reported.
     Error(String),
-    Custom(String),
+    /// Something else has happened that is expected.
+    Custom(G::GameEndReason),
+    /// An unknown error has occurred.
     Unknown,
 }
 
@@ -40,6 +47,7 @@ pub enum LeaveReason {
 pub enum AppState {
     Lobby,
     InGame,
+    Paused,
     Finished,
 }
 
@@ -97,6 +105,8 @@ pub trait GameKey {
     fn is_action_request(&self) -> Option<Result<EndpointId>>;
     /// This entry is a chat message, return the ID of the sender.
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
+    /// This entry is a quit announcement, return the ID of the quitter.
+    fn is_quit_request(&self) -> Option<Result<EndpointId>>;
     /// A player entry has been updated
     fn is_player_entry(&self) -> bool;
     /// Game State has updated
@@ -133,6 +143,13 @@ impl GameKey for Entry {
         // The key is "chat.<timestamp>.<id>", so we split and take the last part.
         let key_str = String::from_utf8_lossy(self.key());
         key_str.split('.').last().map(endpoint_id_from_str)
+    }
+    fn is_quit_request(&self) -> Option<Result<EndpointId>> {
+        if !self.key().starts_with(PREFIX_QUIT) {
+            return None;
+        }
+        let id = String::from_utf8_lossy(&self.key()[PREFIX_QUIT.len()..]);
+        Some(endpoint_id_from_str(&id))
     }
     fn is_player_entry(&self) -> bool {
         self.key().starts_with(PREFIX_PLAYER)

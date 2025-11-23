@@ -36,6 +36,7 @@ impl GameLogic for TestGame {
     type GameAction = TestGameAction;
     type PlayerRole = TestPlayerRole;
     type GameError = TestGameError;
+    type GameEndReason = ();
 
     fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         players
@@ -130,4 +131,40 @@ pub async fn join_test_room(
     };
     client_room.announce_presence(name).await?;
     Ok((client_room, client_events))
+}
+
+/// Wait until we have the expected number of players in the lobby
+pub async fn await_lobby_update(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    expected_players: usize,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::LobbyUpdated(players) = event {
+            if players.len() == expected_players {
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// When a game starts we see two events (in non-deterministic order)
+pub async fn await_game_start(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+) -> anyhow::Result<()> {
+    println!("Waiting for game to start...");
+    let mut has_seen_app_state_update = false;
+    let mut has_seen_game_state_update = false;
+    loop {
+        match await_event(events).await? {
+            UiEvent::AppStateChanged(AppState::InGame) => {
+                has_seen_app_state_update = true;
+            }
+            UiEvent::StateUpdated(..) => has_seen_game_state_update = true,
+            _ => {}
+        }
+        if has_seen_app_state_update && has_seen_game_state_update {
+            return Ok(());
+        }
+    }
 }
