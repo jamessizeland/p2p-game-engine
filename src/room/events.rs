@@ -3,32 +3,37 @@ use crate::{
     room::{AppState, PlayerMap, chat::ChatMessage, state::*},
 };
 use anyhow::{Result, anyhow};
+use iroh::EndpointId;
 use iroh_blobs::Hash;
-use iroh_docs::{ContentStatus, engine::LiveEvent, sync::Entry};
+use iroh_docs::{
+    ContentStatus,
+    engine::{LiveEvent, SyncEvent},
+    sync::Entry,
+};
 use n0_future::StreamExt as _;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 /// Public events your library will send to the game UI
 #[derive(Debug)]
-pub enum GameEvent<G: GameLogic> {
+pub enum UiEvent<G: GameLogic> {
     LobbyUpdated(PlayerMap),
     StateUpdated(G::GameState),
     AppStateChanged(AppState),
     ChatReceived { id: PlayerInfo, msg: ChatMessage },
     HostDisconnected,
-    Error(String),
+    Error(String), // TODO replace with AppError including G::GameError
 }
 
-impl<G: GameLogic> Display for GameEvent<G> {
+impl<G: GameLogic> Display for UiEvent<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GameEvent::LobbyUpdated(players) => write!(f, "LobbyUpdated({players})"),
-            GameEvent::StateUpdated(state) => write!(f, "StateUpdated({state:?})"),
-            GameEvent::AppStateChanged(state) => write!(f, "AppStateChanged({state:?})"),
-            GameEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
-            GameEvent::HostDisconnected => write!(f, "HostDisconnected"),
-            GameEvent::Error(msg) => write!(f, "Error({msg})"),
+            UiEvent::LobbyUpdated(players) => write!(f, "LobbyUpdated({players})"),
+            UiEvent::StateUpdated(state) => write!(f, "StateUpdated({state:?})"),
+            UiEvent::AppStateChanged(state) => write!(f, "AppStateChanged({state:?})"),
+            UiEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
+            UiEvent::HostDisconnected => write!(f, "HostDisconnected"),
+            UiEvent::Error(msg) => write!(f, "Error({msg})"),
         }
     }
 }
@@ -36,7 +41,7 @@ impl<G: GameLogic> Display for GameEvent<G> {
 impl<G: GameLogic> GameRoom<G> {
     pub(crate) async fn start_event_loop(
         &mut self,
-    ) -> Result<(mpsc::Receiver<GameEvent<G>>, JoinHandle<()>)> {
+    ) -> Result<(mpsc::Receiver<UiEvent<G>>, JoinHandle<()>)> {
         let mut sub = self.state.doc.subscribe().await?;
         let (sender, receiver) = mpsc::channel(32); // Event channel for the UI
 
@@ -49,16 +54,33 @@ impl<G: GameLogic> GameRoom<G> {
                 tokio::select! {
                     // Listen for iroh doc events
                     Some(Ok(event)) = sub.next() => {
-                        if let Some(entry) = parse_live_event(event, &mut pending_entries) {
-                            match process_entry(&entry, &state_data, &logic).await {
-                                Ok(None) => {} // No event to send
+                        let network_event = match NetworkEvent::parse(event, &mut pending_entries)  {
+                            Some(event) => event,
+                            None => continue,
+                        };
+                        match network_event {
+                            NetworkEvent::Update(entry) => match process_entry(&entry, &state_data, &logic).await {
                                 Err(e) => eprintln!("Error processing event: {}", e),
+                                Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     if sender.send(event).await.is_err() {
                                         break; // Channel closed
                                     }
                                 }
-                            }
+                            },
+                            NetworkEvent::Joiner(id) => println!("{id} joined the game room"),
+                            NetworkEvent::Leaver(id) => println!("{id} left the game room"),
+                            NetworkEvent::SyncFailed => {
+                                let error = UiEvent::Error("networking error".to_string());
+                                eprintln!("Error processing event: {}", error);
+                                if sender.send(error).await.is_err() {
+                                        break; // Channel closed
+                                    }
+                                },
+                            NetworkEvent::SyncSucceeded => {
+                                let host = state_data.is_host().await.unwrap_or(false);
+                                println!(">>> {} Sync succeeded", if host { "HOST" } else { "CLIENT" });
+                            },
                         }
                     },
                     else => break, // Stream finished
@@ -73,7 +95,7 @@ async fn process_entry<G: GameLogic>(
     entry: &Entry,
     data: &StateData<G>,
     logic: &Arc<G>,
-) -> Result<Option<GameEvent<G>>> {
+) -> Result<Option<UiEvent<G>>> {
     let is_host = data.is_host().await?;
 
     #[cfg(debug_assertions)]
@@ -139,7 +161,7 @@ async fn process_entry<G: GameLogic>(
         let player = data.get_player_info(&node_id).await?.unwrap_or_default();
         return match data.parse::<ChatMessage>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse ChatMessage from {player}: {e}")),
-            Ok(msg) => Ok(Some(GameEvent::ChatReceived {
+            Ok(msg) => Ok(Some(UiEvent::ChatReceived {
                 id: player.clone(),
                 msg,
             })),
@@ -148,19 +170,19 @@ async fn process_entry<G: GameLogic>(
         // A player entry has been added/updated. Fetch the whole list to signal an update.
         return match data.get_players_list().await {
             Err(e) => Err(anyhow!("Failed to get players list after update: {e}")),
-            Ok(players) => Ok(Some(GameEvent::LobbyUpdated(players))),
+            Ok(players) => Ok(Some(UiEvent::LobbyUpdated(players))),
         };
     } else if entry.is_game_state_update() {
         // The game state has been updated by the host.
         return match data.parse::<G::GameState>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse GameState: {e}")),
-            Ok(state) => Ok(Some(GameEvent::StateUpdated(state))),
+            Ok(state) => Ok(Some(UiEvent::StateUpdated(state))),
         };
     } else if entry.is_app_state_update() {
         // The app state has been updated by the host.
         return match data.parse::<AppState>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
-            Ok(app_state) => Ok(Some(GameEvent::AppStateChanged(app_state))),
+            Ok(app_state) => Ok(Some(UiEvent::AppStateChanged(app_state))),
         };
     }
     println!("unexpected event {}", String::from_utf8_lossy(entry.key()));
@@ -168,30 +190,47 @@ async fn process_entry<G: GameLogic>(
     Ok(None)
 }
 
-/// Output a doc entry when a new one is ready.
-fn parse_live_event(event: LiveEvent, pending_entries: &mut HashMap<Hash, Entry>) -> Option<Entry> {
-    use ContentStatus::{Complete, Incomplete, Missing};
-    match event {
-        // TODO maybe add functionality to handle losing and gaining neighbours
-        LiveEvent::InsertLocal { entry } => Some(entry),
-        LiveEvent::InsertRemote {
-            entry,
-            content_status: Complete,
-            ..
-        } => Some(entry),
-        LiveEvent::InsertRemote {
-            entry,
-            content_status: Missing | Incomplete,
-            ..
-        } => {
-            pending_entries.insert(entry.content_hash(), entry);
-            None
-        }
-        LiveEvent::ContentReady { hash } => pending_entries.remove(&hash),
-        _other => {
-            #[cfg(debug_assertions)]
-            println!("LIVE_EVENT >>> {_other:?}");
-            None
+enum NetworkEvent {
+    Update(Entry),
+    Joiner(EndpointId),
+    Leaver(EndpointId),
+    SyncFailed,
+    SyncSucceeded,
+}
+
+impl NetworkEvent {
+    /// Output a doc entry when a new one is ready.
+    fn parse(event: LiveEvent, pending_entries: &mut HashMap<Hash, Entry>) -> Option<Self> {
+        use ContentStatus::{Complete, Incomplete, Missing};
+        match event {
+            LiveEvent::InsertLocal { entry } => Some(Self::Update(entry)),
+            LiveEvent::InsertRemote {
+                entry,
+                content_status: Complete,
+                ..
+            } => Some(Self::Update(entry)),
+            LiveEvent::InsertRemote {
+                entry,
+                content_status: Missing | Incomplete,
+                ..
+            } => {
+                pending_entries.insert(entry.content_hash(), entry);
+                None
+            }
+            LiveEvent::ContentReady { hash } => pending_entries
+                .remove(&hash)
+                .map(|entry| Self::Update(entry)),
+            LiveEvent::NeighborUp(id) => Some(Self::Joiner(id)),
+            LiveEvent::NeighborDown(id) => Some(Self::Leaver(id)),
+            LiveEvent::SyncFinished(SyncEvent { result, .. }) => match result {
+                Ok(_) => Some(Self::SyncSucceeded),
+                Err(_) => Some(Self::SyncFailed),
+            },
+            _other => {
+                #[cfg(debug_assertions)]
+                println!("LIVE_EVENT >>> {_other:?}");
+                None
+            }
         }
     }
 }
