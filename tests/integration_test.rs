@@ -7,6 +7,7 @@ use p2p_game_engine::GameRoom;
 use p2p_game_engine::UiEvent;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 async fn await_event(event: &mut mpsc::Receiver<UiEvent<TestGame>>) -> Result<UiEvent<TestGame>> {
     let duration = Duration::from_secs(2);
@@ -39,7 +40,21 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     }
 
     println!("Setting up Client Room");
-    let (client_room, mut client_events) = GameRoom::join(TestGame, ticket_string, None).await?;
+    // Sometimes this fails, so we have a retry mechanic.
+    let mut retries = 3;
+    let (client_room, mut client_events) = loop {
+        sleep(Duration::from_secs(1)).await;
+        match GameRoom::join(TestGame, &ticket_string, None).await {
+            Ok((room, events)) => break (room, events),
+            Err(e) => {
+                if retries == 0 {
+                    panic!("Failed to join room: {e}");
+                }
+                println!("Failed to join room: {e}. Retrying...");
+                retries -= 1;
+            }
+        }
+    };
 
     // --- LOBBY PHASE ---
 

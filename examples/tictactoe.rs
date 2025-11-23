@@ -283,7 +283,7 @@ async fn main() -> Result<()> {
             (room, events)
         }
         Commands::Join { ticket } => {
-            let (room, events) = GameRoom::join(TicTacToeLogic, ticket, Some(data_path)).await?;
+            let (room, events) = GameRoom::join(TicTacToeLogic, &ticket, Some(data_path)).await?;
             println!("Joined game! Your ID: {}", room.id());
             print!("Enter your name: ");
             io::stdout().flush()?;

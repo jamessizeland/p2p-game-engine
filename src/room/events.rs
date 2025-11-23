@@ -70,8 +70,8 @@ impl<G: GameLogic> GameRoom<G> {
                             },
                             NetworkEvent::Joiner(id) => println!("{id} joined the game room"),
                             NetworkEvent::Leaver(id) => println!("{id} left the game room"),
-                            NetworkEvent::SyncFailed => {
-                                let error = UiEvent::Error("networking error".to_string());
+                            NetworkEvent::SyncFailed(reason) => {
+                                let error = UiEvent::Error(format!("Sync failed: {reason}"));
                                 eprintln!("Error processing event: {}", error);
                                 if sender.send(error).await.is_err() {
                                         break; // Channel closed
@@ -194,7 +194,7 @@ enum NetworkEvent {
     Update(Entry),
     Joiner(EndpointId),
     Leaver(EndpointId),
-    SyncFailed,
+    SyncFailed(String),
     SyncSucceeded,
 }
 
@@ -224,7 +224,7 @@ impl NetworkEvent {
             LiveEvent::NeighborDown(id) => Some(Self::Leaver(id)),
             LiveEvent::SyncFinished(SyncEvent { result, .. }) => match result {
                 Ok(_) => Some(Self::SyncSucceeded),
-                Err(_) => Some(Self::SyncFailed),
+                Err(reason) => Some(Self::SyncFailed(reason)),
             },
             _other => {
                 #[cfg(debug_assertions)]

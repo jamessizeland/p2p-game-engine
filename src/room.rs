@@ -100,11 +100,11 @@ impl<G: GameLogic> GameRoom<G> {
     /// Join a GameRoom
     pub async fn join(
         logic: G,
-        ticket: String,
+        ticket: &str,
         store_path: Option<PathBuf>,
     ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
         // TODO establish that this ticket matches the game we expect.
-        let state = StateData::new(store_path, Some(ticket)).await?;
+        let state = StateData::new(store_path, Some(ticket.to_string())).await?;
 
         let mut room = Self::new(state, logic);
         let (event_inbox, event_handle) = room.start_event_loop().await?;
