@@ -60,7 +60,7 @@ impl<G: GameLogic> GameRoom<G> {
                         };
                         match network_event {
                             NetworkEvent::Update(entry) => match process_entry(&entry, &state_data, &logic).await {
-                                Err(e) => eprintln!("Error processing event: {}", e),
+                                Err(e) => eprintln!("Error processing event: {e}"),
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     if sender.send(event).await.is_err() {
@@ -72,15 +72,12 @@ impl<G: GameLogic> GameRoom<G> {
                             NetworkEvent::Leaver(id) => println!("{id} left the game room"),
                             NetworkEvent::SyncFailed(reason) => {
                                 let error = UiEvent::Error(format!("Sync failed: {reason}"));
-                                eprintln!("Error processing event: {}", error);
+                                eprintln!("Error processing event: {error}");
                                 if sender.send(error).await.is_err() {
                                         break; // Channel closed
                                     }
                                 },
-                            NetworkEvent::SyncSucceeded => {
-                                let host = state_data.is_host().await.unwrap_or(false);
-                                println!(">>> {} Sync succeeded", if host { "HOST" } else { "CLIENT" });
-                            },
+                            NetworkEvent::SyncSucceeded => { /* Do nothing for now */},
                         }
                     },
                     else => break, // Stream finished
@@ -96,21 +93,9 @@ async fn process_entry<G: GameLogic>(
     data: &StateData<G>,
     logic: &Arc<G>,
 ) -> Result<Option<UiEvent<G>>> {
-    let is_host = data.is_host().await?;
-
-    #[cfg(debug_assertions)]
-    {
-        let mut key = String::from_utf8_lossy(entry.key()).to_string();
-        key.truncate(15);
-        println!(
-            ">> {} >> Processing entry: {key}",
-            if is_host { "HOST" } else { "CLIENT" },
-        );
-    }
-
     // --- HOST LOGIC ---
     if let Some(node_id) = entry.is_join() {
-        if !is_host {
+        if !data.is_host().await? {
             return Ok(None);
         }
         let node_id = node_id?;
@@ -128,7 +113,7 @@ async fn process_entry<G: GameLogic>(
         // in turn trigger the `LobbyUpdated` ui event. So we don't need to return anything here.
         return Ok(None);
     } else if let Some(node_id) = entry.is_action_request() {
-        if !is_host {
+        if !data.is_host().await? {
             return Ok(None);
         }
         let node_id = node_id?;
@@ -226,11 +211,7 @@ impl NetworkEvent {
                 Ok(_) => Some(Self::SyncSucceeded),
                 Err(reason) => Some(Self::SyncFailed(reason)),
             },
-            _other => {
-                #[cfg(debug_assertions)]
-                println!("LIVE_EVENT >>> {_other:?}");
-                None
-            }
+            _other => None,
         }
     }
 }
