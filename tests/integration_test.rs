@@ -1,60 +1,13 @@
 mod common;
 use common::*;
-
-use anyhow::Result;
-use p2p_game_engine::AppState;
-use p2p_game_engine::GameRoom;
-use p2p_game_engine::UiEvent;
-use std::time::Duration;
-use tokio::sync::mpsc;
-use tokio::time::sleep;
-
-async fn await_event(event: &mut mpsc::Receiver<UiEvent<TestGame>>) -> Result<UiEvent<TestGame>> {
-    let duration = Duration::from_secs(2);
-    tokio::time::timeout(duration, event.recv())
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
-}
+use p2p_game_engine::{AppState, UiEvent};
 
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
-    println!("Setting up Host Room");
-    let (host_room, mut host_events) = GameRoom::create(TestGame, None).await?;
-    let ticket_string = host_room.ticket().to_string();
-    println!("Host Ticket: {}", &ticket_string);
+    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room().await?;
 
-    let host_name = "HostPlayer";
-    println!("Announcing Host Presence");
-    host_room.announce_presence(host_name).await?;
-    let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event}");
-    let host_id = host_room.id();
-    match event {
-        UiEvent::LobbyUpdated(players) => {
-            assert_eq!(players.len(), 1);
-            assert!(players.contains_key(&host_id));
-            assert_eq!(players.get(&host_id).unwrap().name, host_name);
-        }
-        _ => panic!("Host received wrong event type"),
-    }
-
-    println!("Setting up Client Room");
-    // Sometimes this fails, so we have a retry mechanic.
-    let mut retries = 3;
-    let (client_room, mut client_events) = loop {
-        sleep(Duration::from_secs(1)).await;
-        match GameRoom::join(TestGame, &ticket_string, None).await {
-            Ok((room, events)) => break (room, events),
-            Err(e) => {
-                if retries == 0 {
-                    panic!("Failed to join room: {e}");
-                }
-                println!("Failed to join room: {e}. Retrying...");
-                retries -= 1;
-            }
-        }
-    };
+    let (client_room, mut client_events) = join_test_room(&ticket_string, 3).await?;
 
     // --- LOBBY PHASE ---
 
