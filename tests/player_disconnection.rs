@@ -11,9 +11,18 @@
 //! - tbc...
 
 mod common;
+
 use common::*;
 use p2p_game_engine::*;
-use tokio::time::{Duration, sleep};
+
+async fn get_player_statuses(room: &GameRoom<TestGame>) -> anyhow::Result<Vec<PlayerStatus>> {
+    Ok(room
+        .get_players_list()
+        .await?
+        .iter()
+        .map(|p| p.1.status)
+        .collect())
+}
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
@@ -23,7 +32,7 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("player1").await?;
 
     // Use two clients to ensure broadcast works
-    let (_client_room1, mut client_events1) = join_test_room("player2", &ticket_string, 3).await?;
+    let (client_room1, mut client_events1) = join_test_room("player2", &ticket_string, 3).await?;
 
     // Wait for lobby to be fully populated for all clients
     await_lobby_update(&mut client_events1, 2).await?;
@@ -34,33 +43,27 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     // Wait for clients to enter the game
     await_game_start(&mut client_events1).await?;
 
+    let player_list = get_player_statuses(&client_room1).await?;
+    assert!(player_list.len() == 2);
+    assert!(player_list.contains(&PlayerStatus::Online));
+    assert!(!player_list.contains(&PlayerStatus::Offline));
+
     // --- HOST LEAVES ---
     println!("Host leaving...");
     host_room
         .announce_leave(&LeaveReason::ApplicationClosed)
         .await?;
+    drop(host_room);
 
-    // Give iroh a moment to sync the leave announcement before we drop the host
-    sleep(Duration::from_millis(200)).await;
-
-    // Clients should receive announcements that the host player has left and why.
-    // First event is HostDisconnected
-    // let event1 = await_event(&mut client_events1).await?;
-    // assert!(matches!(event1, UiEvent::HostDisconnected));
-
-    // // Second event is the lobby update showing the host is gone
-    // let event2 = await_event(&mut client_events1).await?;
-    // if let UiEvent::LobbyUpdated(players) = event2 {
-    //     assert_eq!(players.len(), 1); // Only 1 client left
-    // } else {
-    //     panic!("Expected LobbyUpdated, got {event2:?}");
-    // }
-    for index in 0..3 {
+    for index in 0..2 {
         let event = await_event(&mut client_events1).await?;
         println!("{index}: Client event: {event:?}");
     }
 
-    // drop(host_room);
+    let player_list = get_player_statuses(&client_room1).await?;
+    assert!(player_list.len() == 2);
+    assert!(player_list.contains(&PlayerStatus::Online));
+    assert!(player_list.contains(&PlayerStatus::Offline));
 
     Ok(())
 }
@@ -70,10 +73,10 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     // An "uncontrolled" disconnect is when the host process crashes or is dropped.
 
     // --- SETUP PHASE ---
-    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("player1").await?;
+    let (host_room, ticket_string, host_id, _host_events) = setup_test_room("player1").await?;
 
     let (client_room1, mut client_events1) = join_test_room("player2", &ticket_string, 3).await?;
-    let (client_room2, mut client_events2) = join_test_room("player3", &ticket_string, 3).await?;
+    let (_client_room2, mut client_events2) = join_test_room("player3", &ticket_string, 3).await?;
 
     // Wait for lobby to be fully populated for all clients
     await_lobby_update(&mut client_events1, 3).await?;
@@ -90,19 +93,17 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     drop(host_room);
 
     // Clients should receive announcements that the host player has left and why.
-    for mut events in [client_events1, client_events2] {
-        // First event is HostDisconnected
-        let event1 = await_event(&mut events).await?;
-        assert!(matches!(event1, UiEvent::HostDisconnected));
-
-        // Second event is AppStateChanged to Paused
-        let event2 = await_event(&mut events).await?;
-        assert!(matches!(event2, UiEvent::AppStateChanged(AppState::Paused)));
-    }
+    // We only need to check one client for this test.
+    let event = await_event(&mut client_events1).await?;
+    assert!(matches!(event, UiEvent::HostDisconnected));
 
     // Check state directly
-    assert_eq!(client_room1.get_app_state().await?, AppState::Paused);
-    assert_eq!(client_room2.get_app_state().await?, AppState::Paused);
+    // The app state should remain InGame. The UI is responsible for pausing.
+    assert_eq!(client_room1.get_app_state().await?, AppState::InGame);
+
+    // The host's player status should be updated to Offline by the other client,
+    // which then syncs to this client. We'll wait for that lobby update.
+    await_lobby_status_update(&mut client_events2, &host_id, PlayerStatus::Offline).await?;
 
     Ok(())
 }

@@ -168,3 +168,23 @@ pub async fn await_game_start(
         }
     }
 }
+
+// Add this to tests/common.rs
+
+/// Wait until a specific player's status is updated in the lobby
+pub async fn await_lobby_status_update(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    player_id: &EndpointId,
+    expected_status: PlayerStatus,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::LobbyUpdated(players) = event {
+            if let Some(player) = players.get(player_id) {
+                if player.status == expected_status {
+                    return Ok(());
+                }
+            }
+        }
+    }
+}

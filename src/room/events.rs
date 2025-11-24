@@ -1,5 +1,6 @@
 use crate::{
     GameLogic, GameRoom, PlayerInfo,
+    player::PlayerStatus,
     room::{AppState, PlayerMap, chat::ChatMessage, state::*},
 };
 use anyhow::{Result, anyhow};
@@ -66,25 +67,30 @@ impl<G: GameLogic> GameRoom<G> {
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     // Send the event to the UI
-                                    println!("UI event: {event}");
+                                    println!("---> {} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
+                                        "Host"
+                                    } else {
+                                        "Client"
+                                    });
                                     if sender.send(event).await.is_err() {
                                         break; // Channel closed
                                     }
                                 }
                             },
-                            NetworkEvent::Joiner(id) => println!("{id} joined the game room"),
+                            NetworkEvent::Joiner(_id) => {},
                             NetworkEvent::Leaver(id) => {
-                                println!("{id} left the game room");
-                                if state_data.is_peer_host(&id).await.unwrap_or(false) {
-                                    // The host has disconnected.
-                                    // Set our own state to paused and inform the UI.
-                                    state_data.set_app_state(&AppState::Paused).await.ok();
-                                    if sender.send(UiEvent::HostDisconnected).await.is_err() {
-                                        break; // Channel closed
-                                    }
-                                    if sender.send(UiEvent::AppStateChanged(AppState::Paused)).await.is_err() {
-                                        break; // Channel closed
-                                    }
+                                // A peer has disconnected from us.
+                                // If we are the host, we are responsible for updating the player's status.
+                                if state_data.is_host().await.unwrap_or(false) {
+                                    println!("Host is updating status for {id} to Offline");
+                                    state_data.set_player_status(&id, PlayerStatus::Offline).await.ok();
+                                } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
+                                        // If we are a client, we only care if the peer that dropped was the host.
+                                        println!("Client detected host disconnection.");
+                                        state_data.host_offline();
+                                        if sender.send(UiEvent::HostDisconnected).await.is_err() {
+                                            break; // Channel closed
+                                        }
                                 }
                             },
                             NetworkEvent::SyncFailed(reason) => {
@@ -112,7 +118,12 @@ async fn process_entry<G: GameLogic>(
 ) -> Result<Option<UiEvent<G>>> {
     #[cfg(debug_assertions)]
     println!(
-        "processing entry: {:?}",
+        ">>> {} processing entry: {:?}",
+        if data.is_host().await? {
+            "Host"
+        } else {
+            "Client"
+        },
         String::from_utf8_lossy(entry.key())
     );
     // --- HOST LOGIC ---
@@ -196,6 +207,7 @@ async fn process_entry<G: GameLogic>(
         return match data.iroh.get_content_bytes(entry).await {
             Err(e) => Err(anyhow!("Failed to parse HostId: {e}")),
             Ok(host_id) => {
+                data.host_online(); // the host has come back online or been claimed.
                 let host_id = endpoint_id_from_str(&String::from_utf8_lossy(&host_id))?;
                 let player = data.get_player_info(&host_id).await?.unwrap_or_default();
                 Ok(Some(UiEvent::HostSet { id: player }))
@@ -210,11 +222,6 @@ async fn process_entry<G: GameLogic>(
         }
         if data.is_peer_host(&node_id).await? {
             // The host has explicitly quit.
-            // Set our own state to paused and inform the UI.
-            data.set_app_state(&AppState::Paused).await?;
-            if let Ok(Some(_)) = data.remove_player(&node_id).await {
-                // removal will trigger LobbyUpdated
-            }
             return Ok(Some(UiEvent::HostDisconnected));
         }
         // TODO: Handle non-host player leaving

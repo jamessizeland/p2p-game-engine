@@ -12,7 +12,12 @@ use iroh_docs::{
     store::Query,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{marker::PhantomData, path::PathBuf, str::FromStr as _};
+use std::{
+    marker::PhantomData,
+    path::PathBuf,
+    str::FromStr as _,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use crate::{GameLogic, Iroh};
 
@@ -54,6 +59,8 @@ pub enum AppState {
 /// Wrapper for the Iroh Document
 #[derive(Clone)]
 pub struct StateData<G: GameLogic> {
+    /// If we are not the host, and the host is offline, we pause.
+    host_disconnected: Arc<AtomicBool>,
     phantom: PhantomData<G>,
     pub(crate) endpoint_id: EndpointId,
     pub(crate) author_id: AuthorId,
@@ -83,6 +90,7 @@ impl<G: GameLogic> StateData<G> {
         };
 
         Ok(Self {
+            host_disconnected: Arc::new(AtomicBool::new(false)),
             phantom: PhantomData,
             endpoint_id,
             author_id,
@@ -95,6 +103,21 @@ impl<G: GameLogic> StateData<G> {
     /// Convert entry to known data type
     pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
         self.iroh.get_content_as(entry).await
+    }
+    /// Set the data into a paused state
+    pub fn host_offline(&self) {
+        self.host_disconnected
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    /// Set the data into a resumed state
+    pub fn host_online(&self) {
+        self.host_disconnected
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+    /// Check if the data is in a paused state
+    pub fn is_host_disconnected(&self) -> bool {
+        self.host_disconnected
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 

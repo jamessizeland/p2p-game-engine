@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use super::*;
-use crate::{GameLogic, PlayerInfo, room::chat::ChatMessage};
+use crate::{GameLogic, PlayerInfo, player::PlayerStatus, room::chat::ChatMessage};
 use anyhow::Result;
+use tokio::time::sleep;
 
 impl<G: GameLogic> StateData<G> {
     /// Set the AppState.
@@ -44,17 +47,27 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(key.as_bytes(), &value).await
     }
 
-    /// Remove a player from the players list
-    pub async fn remove_player(&self, player_id: &EndpointId) -> Result<Option<()>> {
-        let key = format!("{}{}", std::str::from_utf8(PREFIX_PLAYER)?, player_id);
-        self.delete_bytes(&key.into_bytes()).await.map(Some)
+    /// Set a player's online/offline status
+    pub async fn set_player_status(
+        &self,
+        player_id: &EndpointId,
+        status: PlayerStatus,
+    ) -> Result<()> {
+        if let Some(mut player_info) = self.get_player_info(player_id).await? {
+            player_info.status = status;
+            self.insert_player(*player_id, &player_info).await?;
+        }
+        Ok(())
     }
 
     /// Announce that we have left the room, and why.
     pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
         let quit_key = format!("{}{}", str::from_utf8(PREFIX_QUIT)?, self.endpoint_id);
         let value = postcard::to_stdvec(reason)?;
-        self.set_bytes(&quit_key.into_bytes(), &value).await
+        self.set_bytes(&quit_key.into_bytes(), &value).await?;
+        // allow a short delay for this message to sync
+        sleep(Duration::from_secs(1)).await;
+        Ok(())
     }
 
     /// Announce that we have joined the room.
@@ -80,11 +93,6 @@ impl<G: GameLogic> StateData<G> {
         self.doc
             .set_bytes(self.author_id, key.to_vec(), value.to_vec())
             .await?;
-        Ok(())
-    }
-    /// Remove the state data for a particular key
-    async fn delete_bytes(&self, key: &[u8]) -> Result<()> {
-        self.doc.del(self.author_id, key.to_vec()).await?;
         Ok(())
     }
 }
