@@ -219,12 +219,9 @@ async fn process_entry<G: GameLogic>(
         // Let other peers handle it.
         if node_id == data.endpoint_id {
             return Ok(None);
+        } else {
+            return Ok(None); // TODO handle preparing leaver
         }
-        if data.is_peer_host(&node_id).await? {
-            // The host has explicitly quit.
-            return Ok(Some(UiEvent::HostDisconnected));
-        }
-        // TODO: Handle non-host player leaving
     }
     println!("unknown event: {entry:?}");
     Ok(None)

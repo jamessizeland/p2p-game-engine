@@ -57,6 +57,7 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
 
     // --- HOST LEAVES ---
     println!("Host leaving...");
+    host_room.announce_leave(&LeaveReason::Forfeit).await?;
     drop(host_room);
 
     assert!(matches!(
