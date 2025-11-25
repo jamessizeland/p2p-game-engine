@@ -13,7 +13,7 @@ pub enum PlayerStatus {
     Offline,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PlayerInfo {
     pub name: String,
     pub status: PlayerStatus,
@@ -43,7 +43,7 @@ impl Into<PlayerInfo> for &str {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PlayerMap(HashMap<EndpointId, PlayerInfo>);
 
 impl Deref for PlayerMap {

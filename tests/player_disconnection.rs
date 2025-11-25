@@ -26,44 +26,56 @@ async fn get_player_statuses(room: &GameRoom<TestGame>) -> anyhow::Result<Vec<Pl
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
-    // A "controlled" disconnect is when the host explicitly announces they are leaving.
+    // A "controlled" disconnect is when the host explicitly announces they are leaving.c
 
     // --- SETUP PHASE ---
     let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("player1").await?;
 
     // Use two clients to ensure broadcast works
     let (client_room1, mut client_events1) = join_test_room("player2", &ticket_string, 3).await?;
+    let (client_room2, mut client_events2) = join_test_room("player3", &ticket_string, 3).await?;
 
     // Wait for lobby to be fully populated for all clients
-    await_lobby_update(&mut client_events1, 2).await?;
+    await_lobby_update(&mut client_events1, 3).await?;
+    await_lobby_update(&mut client_events2, 3).await?;
 
     // --- GAME START ---
     host_room.start_game().await?;
 
     // Wait for clients to enter the game
     await_game_start(&mut client_events1).await?;
+    await_game_start(&mut client_events2).await?;
 
-    let player_list = get_player_statuses(&client_room1).await?;
-    assert!(player_list.len() == 2);
-    assert!(player_list.contains(&PlayerStatus::Online));
-    assert!(!player_list.contains(&PlayerStatus::Offline));
+    {
+        let player_list = get_player_statuses(&client_room1).await?;
+        assert!(player_list.len() == 3);
+        assert!(!player_list.contains(&PlayerStatus::Offline)); // everyone online
+        let player_list = get_player_statuses(&client_room2).await?;
+        assert!(player_list.len() == 3);
+        assert!(!player_list.contains(&PlayerStatus::Offline)); // everyone online
+    }
 
     // --- HOST LEAVES ---
     println!("Host leaving...");
-    host_room
-        .announce_leave(&LeaveReason::ApplicationClosed)
-        .await?;
     drop(host_room);
 
-    for index in 0..2 {
-        let event = await_event(&mut client_events1).await?;
-        println!("{index}: Client event: {event:?}");
-    }
+    assert!(matches!(
+        await_event(&mut client_events1).await?,
+        UiEvent::HostDisconnected
+    ));
+    assert!(matches!(
+        await_event(&mut client_events2).await?,
+        UiEvent::HostDisconnected
+    ));
 
-    let player_list = get_player_statuses(&client_room1).await?;
-    assert!(player_list.len() == 2);
-    assert!(player_list.contains(&PlayerStatus::Online));
-    assert!(player_list.contains(&PlayerStatus::Offline));
+    {
+        let player_list = get_player_statuses(&client_room1).await?;
+        assert!(player_list.len() == 3);
+        assert!(player_list.contains(&PlayerStatus::Offline)); // someone offline
+        let player_list = get_player_statuses(&client_room2).await?;
+        assert!(player_list.len() == 3);
+        assert!(player_list.contains(&PlayerStatus::Offline)); // someone offline
+    }
 
     Ok(())
 }

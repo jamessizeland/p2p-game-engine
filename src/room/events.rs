@@ -16,7 +16,7 @@ use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 /// Public events your library will send to the game UI
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiEvent<G: GameLogic> {
     LobbyUpdated(PlayerMap),
     StateUpdated(G::GameState),

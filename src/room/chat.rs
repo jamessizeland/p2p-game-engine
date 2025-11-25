@@ -2,7 +2,7 @@ use anyhow::Result;
 use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ChatMessage {
     pub from: EndpointId,
     pub message: String,
