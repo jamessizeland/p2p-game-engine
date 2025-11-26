@@ -47,7 +47,7 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(key.as_bytes(), &value).await
     }
 
-    /// Set a player's online/offline status
+    /// Set a player's online/offline status, if they are in our player list
     pub async fn set_player_status(
         &self,
         player_id: &EndpointId,

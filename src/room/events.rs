@@ -77,7 +77,18 @@ impl<G: GameLogic> GameRoom<G> {
                                     }
                                 }
                             },
-                            NetworkEvent::Joiner(_id) => {},
+                            NetworkEvent::Joiner(id) => {
+                                // A peer has connected, if we are the host we can set its status to online
+                                // if they are in our player list already
+                                if state_data.is_host().await.unwrap_or(false) {
+                                    println!("Host is updating status for {id} to Online");
+                                    state_data.set_player_status(&id, PlayerStatus::Online).await.ok();
+                                } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
+                                    // If we are a client, we only care if the peer that joined was the host.
+                                    println!("Client detected host reconnection.");
+                                    state_data.host_online();
+                                }
+                            },
                             NetworkEvent::Leaver(id) => {
                                 // A peer has disconnected from us.
                                 // If we are the host, we are responsible for updating the player's status.
