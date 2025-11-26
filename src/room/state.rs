@@ -65,8 +65,18 @@ pub struct StateData<G: GameLogic> {
     pub(crate) endpoint_id: EndpointId,
     pub(crate) author_id: AuthorId,
     pub(crate) ticket: DocTicket,
-    pub(crate) iroh: Iroh,
+    iroh: Option<Iroh>,
     pub(crate) doc: Doc,
+}
+
+impl<G: GameLogic> Drop for StateData<G> {
+    fn drop(&mut self) {
+        if let Some(iroh) = self.iroh.take() {
+            tokio::spawn(async move {
+                iroh.shutdown().await.ok();
+            });
+        }
+    }
 }
 
 impl<G: GameLogic> StateData<G> {
@@ -95,14 +105,17 @@ impl<G: GameLogic> StateData<G> {
             endpoint_id,
             author_id,
             ticket,
-            iroh,
+            iroh: Some(iroh),
             doc,
         })
+    }
+    pub(crate) fn iroh(&self) -> Result<&Iroh> {
+        self.iroh.as_ref().ok_or(anyhow!("Network layer missing"))
     }
 
     /// Convert entry to known data type
     pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
-        self.iroh.get_content_as(entry).await
+        self.iroh()?.get_content_as(entry).await
     }
     /// Set the data into a paused state
     pub fn host_offline(&self) {

@@ -57,7 +57,7 @@ impl<G: GameLogic> StateData<G> {
         let mut players = PlayerMap::default();
         while let Some(entry_result) = entries.next().await {
             let entry = entry_result?;
-            let player_info: PlayerInfo = self.iroh.get_content_as(&entry).await?;
+            let player_info: PlayerInfo = self.iroh()?.get_content_as(&entry).await?;
             let key_str = String::from_utf8_lossy(entry.key());
             let id_str = key_str
                 .strip_prefix(std::str::from_utf8(PREFIX_PLAYER)?)
@@ -94,7 +94,7 @@ impl<G: GameLogic> StateData<G> {
             .get_one(Query::single_latest_per_key().key_exact(key));
         Ok(match query.await? {
             None => None,
-            Some(entry) => Some(self.iroh.get_content_bytes(&entry).await?),
+            Some(entry) => Some(self.iroh()?.get_content_bytes(&entry).await?),
         })
     }
 }

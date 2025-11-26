@@ -109,6 +109,35 @@ pub async fn setup_test_room(
     Ok((host_room, ticket_string, host_id, host_events))
 }
 
+pub async fn setup_persistent_test_room(
+    name: &str,
+    path: std::path::PathBuf,
+) -> anyhow::Result<(
+    GameRoom<TestGame>,
+    String,
+    EndpointId,
+    mpsc::Receiver<UiEvent<TestGame>>,
+)> {
+    println!("Setting up Persistent Host Room");
+    let (host_room, mut host_events) = GameRoom::create(TestGame, Some(path)).await?;
+    let ticket_string = host_room.ticket().to_string();
+    println!("Host Ticket: {}", &ticket_string);
+
+    println!("Announcing Host Presence");
+    host_room.announce_presence(name).await?;
+    let event = await_event(&mut host_events).await?;
+    println!("Received Host Lobby Update: {event}");
+    let host_id = host_room.id();
+    match event {
+        UiEvent::LobbyUpdated(players) => {
+            assert_eq!(players.len(), 1);
+            assert!(players.contains_key(&host_id));
+        }
+        _ => panic!("Host received wrong event type"),
+    }
+    Ok((host_room, ticket_string, host_id, host_events))
+}
+
 pub async fn join_test_room(
     name: &str,
     ticket_string: &str,

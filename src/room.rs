@@ -64,7 +64,6 @@ impl<G: GameLogic> GameRoom<G> {
         if !self.is_host().await? {
             return Err(anyhow::anyhow!("Only the host can start the game"));
         }
-        // TODO add mechanism for getting and checking that all players are ready
         if self.get_app_state().await? != AppState::Lobby {
             return Err(anyhow::anyhow!("Game has already started"));
         }

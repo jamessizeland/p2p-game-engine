@@ -204,7 +204,7 @@ async fn process_entry<G: GameLogic>(
         };
     } else if entry.is_host_update() {
         // The host has been claimed/reasigned.
-        return match data.iroh.get_content_bytes(entry).await {
+        return match data.iroh()?.get_content_bytes(entry).await {
             Err(e) => Err(anyhow!("Failed to parse HostId: {e}")),
             Ok(host_id) => {
                 data.host_online(); // the host has come back online or been claimed.

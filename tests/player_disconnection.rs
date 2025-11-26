@@ -57,7 +57,9 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
 
     // --- HOST LEAVES ---
     println!("Host leaving...");
-    host_room.announce_leave(&LeaveReason::Forfeit).await?;
+    host_room
+        .announce_leave(&LeaveReason::ApplicationClosed)
+        .await?;
     drop(host_room);
 
     assert!(matches!(
@@ -124,8 +126,45 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
 #[tokio::test]
 async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()> {
     // This requires more complex logic for host election and state reconciliation.
-    // We'll leave this as a todo for now.
-    todo!()
+    // --- SETUP PHASE ---
+    let host_dir = tempfile::tempdir()?.path().to_path_buf();
+    let (host_room, ticket_string, host_id, _host_events) =
+        setup_persistent_test_room("player1", host_dir.clone()).await?;
+
+    let (_client_room, mut client_events) = join_test_room("player2", &ticket_string, 3).await?;
+    await_lobby_update(&mut client_events, 2).await?;
+
+    // --- GAME START ---
+    host_room.start_game().await?;
+    await_game_start(&mut client_events).await?;
+
+    // --- HOST CRASHES ---
+    println!("Crashing host...");
+    drop(host_room);
+
+    // Client should see the host disconnect.
+    assert!(matches!(
+        await_event(&mut client_events).await?,
+        UiEvent::HostDisconnected
+    ));
+    println!("Client detected host disconnection.");
+
+    // --- HOST RECONNECTS ---
+    println!("Reconnecting host...");
+    let (reconnected_host, _new_host_events) =
+        GameRoom::join(TestGame, &ticket_string, Some(host_dir)).await?;
+
+    // The reconnected host should have the same ID and be recognized as host.
+    assert_eq!(reconnected_host.id(), host_id);
+    assert!(reconnected_host.is_host().await?);
+    println!("Host reconnected successfully and is host.");
+
+    // Client should see the host come back online via a NeighborUp event,
+    // which the host follows by setting its status to Online.
+    await_lobby_status_update(&mut client_events, &host_id, PlayerStatus::Online).await?;
+    println!("Client detected host reconnection.");
+
+    Ok(())
 }
 
 #[tokio::test]
