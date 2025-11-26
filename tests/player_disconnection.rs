@@ -84,6 +84,23 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_ticket_updates() -> anyhow::Result<()> {
+    // Test that a ticket gets updated when a new player arrives
+    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("player1").await?;
+
+    let host_only_ticket = host_room.ticket().await?;
+    assert!(host_only_ticket.nodes.len() == 1);
+
+    let _ = join_test_room("player2", &ticket_string, 3).await?;
+
+    let host_and_client_ticket = host_room.ticket().await?;
+
+    assert!(host_and_client_ticket.nodes.len() == 2);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> {
     // An "uncontrolled" disconnect is when the host process crashes or is dropped.
 

@@ -8,7 +8,10 @@ use bytes::Bytes;
 use iroh::EndpointId;
 use iroh_docs::{
     AuthorId, DocTicket, Entry,
-    api::{Doc, protocol::ShareMode},
+    api::{
+        Doc,
+        protocol::{AddrInfoOptions, ShareMode},
+    },
     store::Query,
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -64,7 +67,7 @@ pub struct StateData<G: GameLogic> {
     phantom: PhantomData<G>,
     pub(crate) endpoint_id: EndpointId,
     pub(crate) author_id: AuthorId,
-    ticket: DocTicket,
+    // ticket: DocTicket,
     iroh: Option<Iroh>,
     pub(crate) doc: Doc,
 }
@@ -89,13 +92,14 @@ impl<G: GameLogic> StateData<G> {
         let author_id = iroh.docs().author_default().await?;
         let endpoint_id = iroh.endpoint().id();
 
-        let (ticket, doc) = if let Some(ticket_str) = ticket {
+        let (_ticket, doc) = if let Some(ticket_str) = ticket {
             let ticket = DocTicket::from_str(&ticket_str)?;
             let doc = iroh.docs().import(ticket.clone()).await?;
             (ticket, doc)
         } else {
             let doc = iroh.docs().create().await?;
-            let ticket = doc.share(ShareMode::Write, Default::default()).await?;
+            let addr_options: AddrInfoOptions = Default::default();
+            let ticket = doc.share(ShareMode::Write, addr_options).await?;
             (ticket, doc)
         };
 
@@ -104,7 +108,7 @@ impl<G: GameLogic> StateData<G> {
             phantom: PhantomData,
             endpoint_id,
             author_id,
-            ticket,
+            // ticket,
             iroh: Some(iroh),
             doc,
         })
@@ -135,7 +139,8 @@ impl<G: GameLogic> StateData<G> {
     /// Regenerate the ticket with the latest node information
     pub async fn ticket(&self) -> Result<DocTicket> {
         // Regenerate the ticket to include all current peer addresses.
-        let ticket = self.doc.share(ShareMode::Write, Default::default()).await?;
+        let addr_options: AddrInfoOptions = Default::default();
+        let ticket = self.doc.share(ShareMode::Write, addr_options).await?;
         Ok(ticket)
     }
 }
