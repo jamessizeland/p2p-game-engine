@@ -54,9 +54,9 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn id(&self) -> EndpointId {
         self.endpoint_id
     }
-    /// Read this room's join ticket
-    pub fn ticket(&self) -> &DocTicket {
-        &self.ticket
+    /// Get a fresh join ticket for this room, including all known peer addresses.
+    pub async fn ticket(&self) -> Result<DocTicket> {
+        self.state.ticket().await
     }
 
     /// Start the Game

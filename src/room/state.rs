@@ -64,7 +64,7 @@ pub struct StateData<G: GameLogic> {
     phantom: PhantomData<G>,
     pub(crate) endpoint_id: EndpointId,
     pub(crate) author_id: AuthorId,
-    pub(crate) ticket: DocTicket,
+    ticket: DocTicket,
     iroh: Option<Iroh>,
     pub(crate) doc: Doc,
 }
@@ -131,6 +131,12 @@ impl<G: GameLogic> StateData<G> {
     pub fn is_host_disconnected(&self) -> bool {
         self.host_disconnected
             .load(std::sync::atomic::Ordering::Relaxed)
+    }
+    /// Regenerate the ticket with the latest node information
+    pub async fn ticket(&self) -> Result<DocTicket> {
+        // Regenerate the ticket to include all current peer addresses.
+        let ticket = self.doc.share(ShareMode::Write, Default::default()).await?;
+        Ok(ticket)
     }
 }
 

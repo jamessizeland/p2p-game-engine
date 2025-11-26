@@ -273,7 +273,7 @@ async fn main() -> Result<()> {
         Commands::Host => {
             let (room, events) = GameRoom::create(TicTacToeLogic, Some(data_path)).await?;
             println!("Game hosted! Your ID: {}", room.id());
-            println!("Ticket: {}", room.ticket());
+            println!("Ticket: {}", room.ticket().await?);
             print!("Enter your name: ");
             io::stdout().flush()?;
             let mut name = String::new();

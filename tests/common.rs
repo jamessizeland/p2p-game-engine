@@ -90,7 +90,7 @@ pub async fn setup_test_room(
 )> {
     println!("Setting up Host Room");
     let (host_room, mut host_events) = GameRoom::create(TestGame, None).await?;
-    let ticket_string = host_room.ticket().to_string();
+    let ticket_string = host_room.ticket().await?.to_string();
     println!("Host Ticket: {}", &ticket_string);
 
     println!("Announcing Host Presence");
@@ -120,7 +120,7 @@ pub async fn setup_persistent_test_room(
 )> {
     println!("Setting up Persistent Host Room");
     let (host_room, mut host_events) = GameRoom::create(TestGame, Some(path)).await?;
-    let ticket_string = host_room.ticket().to_string();
+    let ticket_string = host_room.ticket().await?.to_string();
     println!("Host Ticket: {}", &ticket_string);
 
     println!("Announcing Host Presence");
