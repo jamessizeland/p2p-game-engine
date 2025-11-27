@@ -359,9 +359,12 @@ async fn main() -> Result<()> {
                         println!("\nGame state changed to: {:?}", app_state);
                     }
                     UiEvent::HostDisconnected => {
-                        println!("\nGame Host disconnected. The game is over.");
+                        println!("\nGame Host disconnected. The game is paused");
                         break;
                     },
+                    UiEvent::HostReconnected => {
+                        println!("\nGame Host reconnected. The game is unpaused")
+                    }
                     UiEvent::HostSet {id } => {
                         println!("\nGame Host assigned to: {id}")
                     }

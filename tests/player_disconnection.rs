@@ -58,9 +58,9 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     // --- HOST LEAVES ---
     println!("Host leaving...");
     host_room
+        .to_owned()
         .announce_leave(&LeaveReason::ApplicationClosed)
         .await?;
-    drop(host_room);
 
     assert!(matches!(
         await_event(&mut client_events1).await?,
@@ -130,12 +130,14 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     assert!(matches!(event, UiEvent::HostDisconnected));
 
     // Check state directly
-    // The app state should remain InGame. The UI is responsible for pausing.
-    assert_eq!(client_room1.get_app_state().await?, AppState::InGame);
+    // The app state should report Paused.  This is a synthetic state not held in the document.
+    assert_eq!(client_room1.get_app_state().await?, AppState::Paused);
 
-    // The host's player status should be updated to Offline by the other client,
-    // which then syncs to this client. We'll wait for that lobby update.
-    await_lobby_status_update(&mut client_events2, &host_id, PlayerStatus::Offline).await?;
+    // The host's player status should not update to Offline, because this is inferred
+    // we don't update it in the document because noone currently has authority to do so.
+    let status =
+        await_lobby_status_update(&mut client_events2, &host_id, PlayerStatus::Offline).await;
+    assert!(status.is_err()); // expect Timed out waiting for an event.
 
     Ok(())
 }
@@ -148,8 +150,10 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     let (host_room, ticket_string, host_id, _host_events) =
         setup_persistent_test_room("player1", host_dir.clone()).await?;
 
-    let (_client_room, mut client_events) = join_test_room("player2", &ticket_string, 3).await?;
+    let (client_room, mut client_events) = join_test_room("player2", &ticket_string, 3).await?;
     await_lobby_update(&mut client_events, 2).await?;
+
+    assert_eq!(client_room.get_app_state().await?, AppState::Lobby);
 
     // --- GAME START ---
     host_room.start_game().await?;
@@ -166,6 +170,8 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     ));
     println!("Client detected host disconnection.");
 
+    assert_eq!(client_room.get_app_state().await?, AppState::Paused);
+
     // --- HOST RECONNECTS ---
     println!("Reconnecting host...");
     let (reconnected_host, _new_host_events) =
@@ -176,11 +182,13 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     assert!(reconnected_host.is_host().await?);
     println!("Host reconnected successfully and is host.");
 
-    // Client should see the host come back online via a NeighborUp event,
-    // which the host follows by setting its status to Online.
-    await_lobby_status_update(&mut client_events, &host_id, PlayerStatus::Online).await?;
-    println!("Client detected host reconnection.");
-
+    // Client should see the host come back online via a NeighborUp event, and unpause their state.
+    assert!(matches!(
+        await_event(&mut client_events).await?,
+        UiEvent::HostReconnected
+    ));
+    assert_eq!(client_room.get_app_state().await?, AppState::InGame);
+    println!("Client detected host reconnection and unpaused.");
     Ok(())
 }
 

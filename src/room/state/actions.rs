@@ -61,7 +61,7 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Announce that we have left the room, and why.
-    pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
+    pub async fn announce_leave(self, reason: &LeaveReason<G>) -> Result<()> {
         let quit_key = format!("{}{}", str::from_utf8(PREFIX_QUIT)?, self.endpoint_id);
         let value = postcard::to_stdvec(reason)?;
         self.set_bytes(&quit_key.into_bytes(), &value).await?;

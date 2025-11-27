@@ -24,6 +24,7 @@ pub enum UiEvent<G: GameLogic> {
     ChatReceived { id: PlayerInfo, msg: ChatMessage },
     HostSet { id: PlayerInfo },
     HostDisconnected,
+    HostReconnected,
     Error(String), // TODO replace with AppError including G::GameError
 }
 
@@ -36,6 +37,7 @@ impl<G: GameLogic> Display for UiEvent<G> {
             UiEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
             UiEvent::HostSet { id } => write!(f, "HostSet({id})"),
             UiEvent::HostDisconnected => write!(f, "HostDisconnected"),
+            UiEvent::HostReconnected => write!(f, "HostReconnected"),
             UiEvent::Error(msg) => write!(f, "Error({msg})"),
         }
     }
@@ -78,6 +80,7 @@ impl<G: GameLogic> GameRoom<G> {
                                 }
                             },
                             NetworkEvent::Joiner(id) => {
+                                println!("Joiner: {id}");
                                 // A peer has connected, if we are the host we can set its status to online
                                 // if they are in our player list already
                                 if state_data.is_host().await.unwrap_or(false) {
@@ -87,6 +90,9 @@ impl<G: GameLogic> GameRoom<G> {
                                     // If we are a client, we only care if the peer that joined was the host.
                                     println!("Client detected host reconnection.");
                                     state_data.host_online();
+                                    if sender.send(UiEvent::HostReconnected).await.is_err() {
+                                            break; // Channel closed
+                                        }
                                 }
                             },
                             NetworkEvent::Leaver(id) => {
