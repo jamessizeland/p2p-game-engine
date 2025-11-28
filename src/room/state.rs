@@ -83,6 +83,9 @@ impl<G: GameLogic> Drop for StateData<G> {
 }
 
 impl<G: GameLogic> StateData<G> {
+    /// Ticket option that helps with reconnecting to a ticket instance.
+    const ADDR_OPTIONS: AddrInfoOptions = AddrInfoOptions::RelayAndAddresses;
+
     /// Create a new StateData instance
     pub async fn new(store_path: Option<PathBuf>, ticket: Option<String>) -> Result<Self> {
         let iroh = match store_path {
@@ -98,8 +101,7 @@ impl<G: GameLogic> StateData<G> {
             (ticket, doc)
         } else {
             let doc = iroh.docs().create().await?;
-            let addr_options: AddrInfoOptions = Default::default();
-            let ticket = doc.share(ShareMode::Write, addr_options).await?;
+            let ticket = doc.share(ShareMode::Write, Self::ADDR_OPTIONS).await?;
             (ticket, doc)
         };
 
@@ -139,8 +141,7 @@ impl<G: GameLogic> StateData<G> {
     /// Regenerate the ticket with the latest node information
     pub async fn ticket(&self) -> Result<DocTicket> {
         // Regenerate the ticket to include all current peer addresses.
-        let addr_options: AddrInfoOptions = Default::default();
-        let ticket = self.doc.share(ShareMode::Write, addr_options).await?;
+        let ticket = self.doc.share(ShareMode::Write, Self::ADDR_OPTIONS).await?;
         Ok(ticket)
     }
 }
