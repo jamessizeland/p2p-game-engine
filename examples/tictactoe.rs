@@ -125,6 +125,7 @@ impl GameLogic for TicTacToeLogic {
     type GameAction = TicTacToeAction;
     type PlayerRole = PlayerRole;
     type GameError = GameError;
+    type GameEndReason = ();
 
     fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         // The first two players become X and O. Everyone else is an observer.
@@ -272,7 +273,7 @@ async fn main() -> Result<()> {
         Commands::Host => {
             let (room, events) = GameRoom::create(TicTacToeLogic, Some(data_path)).await?;
             println!("Game hosted! Your ID: {}", room.id());
-            println!("Ticket: {}", room.ticket());
+            println!("Ticket: {}", room.ticket().await?);
             print!("Enter your name: ");
             io::stdout().flush()?;
             let mut name = String::new();
@@ -358,9 +359,15 @@ async fn main() -> Result<()> {
                         println!("\nGame state changed to: {:?}", app_state);
                     }
                     UiEvent::HostDisconnected => {
-                        println!("\nGame Host disconnected. The game is over.");
+                        println!("\nGame Host disconnected. The game is paused");
                         break;
                     },
+                    UiEvent::HostReconnected => {
+                        println!("\nGame Host reconnected. The game is unpaused")
+                    }
+                    UiEvent::HostSet {id } => {
+                        println!("\nGame Host assigned to: {id}")
+                    }
                 }
             }
             else => {

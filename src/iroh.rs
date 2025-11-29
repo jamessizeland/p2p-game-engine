@@ -75,7 +75,12 @@ impl Iroh {
         let key = load_secret_key(Some(path.clone().join("keypair"))).await?;
 
         // Bind to default port 11204, or fail if taken (standard app behavior)
-        let endpoint = iroh::Endpoint::builder().secret_key(key).bind().await?;
+        let endpoint = iroh::Endpoint::builder()
+            .secret_key(key)
+            .bind_addr_v4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
+            .bind_addr_v6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))
+            .bind()
+            .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
         let blobs_store: Store = FsStore::load(&path).await?.into();
         let docs = Docs::persistent(path.clone())
