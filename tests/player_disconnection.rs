@@ -26,7 +26,7 @@ async fn get_player_statuses(room: &GameRoom<TestGame>) -> anyhow::Result<Vec<Pl
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
-    // A "controlled" disconnect is when the host explicitly announces they are leaving.c
+    // A "controlled" disconnect is when the host explicitly announces they are leaving.
 
     // --- SETUP PHASE ---
     let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("player1").await?;
@@ -127,7 +127,9 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()> {
-    // This requires more complex logic for host election and state reconciliation.
+    // During an active game, the host disconnects without reporting they lose or forfeit.
+    // the game state should enter an inferred pause, preventing other players from
+    // submitting actions until the host reconnects.
     // --- SETUP PHASE ---
     let host_dir = tempfile::tempdir()?.path().to_path_buf();
     let (host_room, ticket_string, host_id, _host_events) =
@@ -176,7 +178,34 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
 }
 
 #[tokio::test]
-async fn test_player_disconnects() -> anyhow::Result<()> {
-    // This is the next step after handling host disconnections.
+async fn test_player_disconnects_during_lobby() -> anyhow::Result<()> {
+    // A player leaves the room for any reason, before the game has started.
+    // They are reassigned to be an observer, should they rejoin later.
+    // (we never fully remove a player from the PlayerMap once they have been registered)
+    todo!()
+}
+
+#[tokio::test]
+async fn test_player_disconnects_during_game() -> anyhow::Result<()> {
+    // A player leaves the room without registering a loss or forfeit.
+    // They will be marked as offline by the host and the game will continue until
+    // it is their turn to act.
+    todo!()
+}
+
+#[tokio::test]
+async fn test_client_player_forfeits() -> anyhow::Result<()> {
+    // Non-host player loses or chooses to forfeit.
+    // In this scenario they should be switched to being an observer and can continue
+    // to stay subscribed to the game state but no-longer act.
+    todo!()
+}
+
+#[tokio::test]
+async fn test_host_forfeits() -> anyhow::Result<()> {
+    // During an active game, the hosting player loses or chooses to forfeit.
+    // In this scenario the game should be able to continue without them needing to stay online.
+    // They will be switched to being an observer, and will elect a new host to take over if they
+    // go offline.
     todo!()
 }
