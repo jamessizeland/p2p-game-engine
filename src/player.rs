@@ -17,6 +17,7 @@ pub enum PlayerStatus {
 pub struct PlayerInfo {
     pub name: String,
     pub status: PlayerStatus,
+    pub is_observer: bool,
 }
 
 impl Display for PlayerInfo {
@@ -30,6 +31,7 @@ impl Default for PlayerInfo {
         Self {
             name: "Unknown".to_string(),
             status: PlayerStatus::Online,
+            is_observer: true,
         }
     }
 }
@@ -39,6 +41,7 @@ impl Into<PlayerInfo> for &str {
         PlayerInfo {
             name: self.to_string(),
             status: PlayerStatus::Online,
+            is_observer: true,
         }
     }
 }
