@@ -20,7 +20,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Received Host Lobby Update: {event}");
     let client_id = client_room.id();
     match event {
-        UiEvent::LobbyUpdated(players) => {
+        UiEvent::Player(players) => {
             assert_eq!(players.len(), 2);
             assert!(players.contains_key(&client_id));
             assert!(players.contains_key(&host_id));
@@ -44,10 +44,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         let event = await_event(&mut client_events).await?;
         println!("event: {event}");
         match event {
-            UiEvent::LobbyUpdated(_) => { /* Good */ }
-            UiEvent::AppStateChanged(AppState::Lobby) => { /* Good */ }
-            UiEvent::HostSet { id } => {
-                assert_eq!(id.name, host_name);
+            UiEvent::Player(_) => { /* Good */ }
+            UiEvent::AppState(AppState::Lobby) => { /* Good */ }
+            UiEvent::Host(HostEvent::Changed { to }) => {
+                assert_eq!(to.name, host_name);
             }
             other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }
@@ -68,8 +68,8 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         let event = await_event(&mut client_events).await?;
         println!("event: {event}");
         match event {
-            UiEvent::AppStateChanged(AppState::InGame) => { /* Good */ }
-            UiEvent::StateUpdated(TestGameState { counter: 0 }) => { /* Good */ }
+            UiEvent::AppState(AppState::InGame) => { /* Good */ }
+            UiEvent::GameState(TestGameState { counter: 0 }) => { /* Good */ }
             _ => panic!("Client received wrong event type, got: {event}"),
         }
     }
@@ -89,7 +89,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     let event = await_event(&mut client_events).await?;
 
     match event {
-        UiEvent::StateUpdated(TestGameState { counter: 1 }) => { /* Good */ }
+        UiEvent::GameState(TestGameState { counter: 1 }) => { /* Good */ }
         _ => panic!("Client received wrong event after action: {event}"),
     }
 

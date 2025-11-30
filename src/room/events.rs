@@ -18,26 +18,34 @@ use tokio::{sync::mpsc, task::JoinHandle};
 /// Public events your library will send to the game UI
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiEvent<G: GameLogic> {
-    LobbyUpdated(PlayerMap),
-    StateUpdated(G::GameState),
-    AppStateChanged(AppState),
-    ChatReceived { id: PlayerInfo, msg: ChatMessage },
-    HostSet { id: PlayerInfo },
-    HostDisconnected,
-    HostReconnected,
+    Player(PlayerMap),
+    GameState(G::GameState),
+    AppState(AppState),
+    Chat { id: PlayerInfo, msg: ChatMessage },
+    Host(HostEvent),
     Error(String), // TODO replace with AppError including G::GameError
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostEvent {
+    /// Host has connected
+    Online,
+    /// Host has disconnected
+    Offline,
+    /// A new host has been assigned
+    Changed { to: PlayerInfo },
 }
 
 impl<G: GameLogic> Display for UiEvent<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UiEvent::LobbyUpdated(players) => write!(f, "LobbyUpdated({players})"),
-            UiEvent::StateUpdated(state) => write!(f, "StateUpdated({state:?})"),
-            UiEvent::AppStateChanged(state) => write!(f, "AppStateChanged({state:?})"),
-            UiEvent::ChatReceived { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
-            UiEvent::HostSet { id } => write!(f, "HostSet({id})"),
-            UiEvent::HostDisconnected => write!(f, "HostDisconnected"),
-            UiEvent::HostReconnected => write!(f, "HostReconnected"),
+            UiEvent::Player(players) => write!(f, "LobbyUpdated({players})"),
+            UiEvent::GameState(state) => write!(f, "StateUpdated({state:?})"),
+            UiEvent::AppState(state) => write!(f, "AppStateChanged({state:?})"),
+            UiEvent::Chat { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
+            UiEvent::Host(HostEvent::Changed { to }) => write!(f, "HostSet({to})"),
+            UiEvent::Host(HostEvent::Offline) => write!(f, "HostOffline"),
+            UiEvent::Host(HostEvent::Online) => write!(f, "HostOnline"),
             UiEvent::Error(msg) => write!(f, "Error({msg})"),
         }
     }
@@ -63,6 +71,11 @@ impl<G: GameLogic> GameRoom<G> {
                             Some(event) => event,
                             None => continue,
                         };
+                        println!("[[[> {} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
+                                "Host"
+                            } else {
+                                "Client"
+                            });
                         match network_event {
                             NetworkEvent::Update(entry) => match process_entry(&entry, &state_data, &logic).await {
                                 Err(e) => eprintln!("Error processing event: {e}"),
@@ -90,7 +103,7 @@ impl<G: GameLogic> GameRoom<G> {
                                     // If we are a client, we only care if the peer that joined was the host.
                                     println!("Client detected host reconnection.");
                                     state_data.host_online();
-                                    if sender.send(UiEvent::HostReconnected).await.is_err() {
+                                    if sender.send(UiEvent::Host(HostEvent::Online)).await.is_err() {
                                             break; // Channel closed
                                         }
                                 }
@@ -105,7 +118,7 @@ impl<G: GameLogic> GameRoom<G> {
                                         // If we are a client, we only care if the peer that dropped was the host.
                                         println!("Client detected host disconnection.");
                                         state_data.host_offline();
-                                        if sender.send(UiEvent::HostDisconnected).await.is_err() {
+                                        if sender.send(UiEvent::Host(HostEvent::Offline)).await.is_err() {
                                             break; // Channel closed
                                         }
                                 }
@@ -196,7 +209,7 @@ async fn process_entry<G: GameLogic>(
         let player = data.get_player_info(&node_id).await?.unwrap_or_default();
         return match data.parse::<ChatMessage>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse ChatMessage from {player}: {e}")),
-            Ok(msg) => Ok(Some(UiEvent::ChatReceived {
+            Ok(msg) => Ok(Some(UiEvent::Chat {
                 id: player.clone(),
                 msg,
             })),
@@ -205,19 +218,19 @@ async fn process_entry<G: GameLogic>(
         // A player entry has been added/updated. Fetch the whole list to signal an update.
         return match data.get_players_list().await {
             Err(e) => Err(anyhow!("Failed to get players list after update: {e}")),
-            Ok(players) => Ok(Some(UiEvent::LobbyUpdated(players))),
+            Ok(players) => Ok(Some(UiEvent::Player(players))),
         };
     } else if entry.is_game_state_update() {
         // The game state has been updated by the host.
         return match data.parse::<G::GameState>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse GameState: {e}")),
-            Ok(state) => Ok(Some(UiEvent::StateUpdated(state))),
+            Ok(state) => Ok(Some(UiEvent::GameState(state))),
         };
     } else if entry.is_app_state_update() {
         // The app state has been updated by the host.
         return match data.parse::<AppState>(&entry).await {
             Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
-            Ok(app_state) => Ok(Some(UiEvent::AppStateChanged(app_state))),
+            Ok(app_state) => Ok(Some(UiEvent::AppState(app_state))),
         };
     } else if entry.is_host_update() {
         // The host has been claimed/reasigned.
@@ -227,7 +240,7 @@ async fn process_entry<G: GameLogic>(
                 data.host_online(); // the host has come back online or been claimed.
                 let host_id = endpoint_id_from_str(&String::from_utf8_lossy(&host_id))?;
                 let player = data.get_player_info(&host_id).await?.unwrap_or_default();
-                Ok(Some(UiEvent::HostSet { id: player }))
+                Ok(Some(UiEvent::Host(HostEvent::Changed { to: player })))
             }
         };
     } else if let Some(node_id) = entry.is_quit_request() {
@@ -244,6 +257,7 @@ async fn process_entry<G: GameLogic>(
     Ok(None)
 }
 
+#[derive(Debug)]
 enum NetworkEvent {
     Update(Entry),
     Joiner(EndpointId),

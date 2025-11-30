@@ -64,11 +64,11 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
 
     assert!(matches!(
         await_event(&mut client_events1).await?,
-        UiEvent::HostDisconnected
+        UiEvent::Host(HostEvent::Offline)
     ));
     assert!(matches!(
         await_event(&mut client_events2).await?,
-        UiEvent::HostDisconnected
+        UiEvent::Host(HostEvent::Offline)
     ));
 
     {
@@ -110,7 +110,7 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     // Clients should receive announcements that the host player has left and why.
     // We only need to check one client for this test.
     let event = await_event(&mut client_events1).await?;
-    assert!(matches!(event, UiEvent::HostDisconnected));
+    assert!(matches!(event, UiEvent::Host(HostEvent::Offline)));
 
     // Check state directly
     // The app state should report Paused.  This is a synthetic state not held in the document.
@@ -151,7 +151,7 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     // Client should see the host disconnect.
     assert!(matches!(
         await_event(&mut client_events).await?,
-        UiEvent::HostDisconnected
+        UiEvent::Host(HostEvent::Offline)
     ));
     println!("Client detected host disconnection.");
 
@@ -170,13 +170,14 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     // Client should see the host come back online via a NeighborUp event, and unpause their state.
     assert!(matches!(
         await_event(&mut client_events).await?,
-        UiEvent::HostReconnected
+        UiEvent::Host(HostEvent::Online)
     ));
     assert_eq!(client_room.get_app_state().await?, AppState::InGame);
     println!("Client detected host reconnection and unpaused.");
     Ok(())
 }
 
+#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_player_disconnects_during_lobby() -> anyhow::Result<()> {
     // A player leaves the room for any reason, before the game has started.
@@ -185,6 +186,7 @@ async fn test_player_disconnects_during_lobby() -> anyhow::Result<()> {
     todo!()
 }
 
+#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_player_disconnects_during_game() -> anyhow::Result<()> {
     // A player leaves the room without registering a loss or forfeit.
@@ -192,7 +194,7 @@ async fn test_player_disconnects_during_game() -> anyhow::Result<()> {
     // it is their turn to act.
     todo!()
 }
-
+#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_client_player_forfeits() -> anyhow::Result<()> {
     // Non-host player loses or chooses to forfeit.
@@ -201,6 +203,7 @@ async fn test_client_player_forfeits() -> anyhow::Result<()> {
     todo!()
 }
 
+#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_host_forfeits() -> anyhow::Result<()> {
     // During an active game, the hosting player loses or chooses to forfeit.

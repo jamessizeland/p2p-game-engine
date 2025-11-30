@@ -99,7 +99,7 @@ pub async fn setup_test_room(
     println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
-        UiEvent::LobbyUpdated(players) => {
+        UiEvent::Player(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
             assert_eq!(players.get(&host_id).unwrap().name, name);
@@ -129,7 +129,7 @@ pub async fn setup_persistent_test_room(
     println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
-        UiEvent::LobbyUpdated(players) => {
+        UiEvent::Player(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
         }
@@ -169,7 +169,7 @@ pub async fn await_lobby_update(
 ) -> anyhow::Result<()> {
     loop {
         let event = await_event(events).await?;
-        if let UiEvent::LobbyUpdated(players) = event {
+        if let UiEvent::Player(players) = event {
             if players.len() == expected_players {
                 return Ok(());
             }
@@ -186,10 +186,10 @@ pub async fn await_game_start(
     let mut has_seen_game_state_update = false;
     loop {
         match await_event(events).await? {
-            UiEvent::AppStateChanged(AppState::InGame) => {
+            UiEvent::AppState(AppState::InGame) => {
                 has_seen_app_state_update = true;
             }
-            UiEvent::StateUpdated(..) => has_seen_game_state_update = true,
+            UiEvent::GameState(..) => has_seen_game_state_update = true,
             _ => {}
         }
         if has_seen_app_state_update && has_seen_game_state_update {
@@ -208,7 +208,7 @@ pub async fn await_lobby_status_update(
 ) -> anyhow::Result<()> {
     loop {
         let event = await_event(events).await?;
-        if let UiEvent::LobbyUpdated(players) = event {
+        if let UiEvent::Player(players) = event {
             if let Some(player) = players.get(player_id) {
                 if player.status == expected_status {
                     return Ok(());

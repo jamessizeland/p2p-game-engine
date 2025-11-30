@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
-pub use events::UiEvent;
+pub use events::{HostEvent, UiEvent};
 pub use state::{AppState, LeaveReason, StateData};
 
 pub struct GameRoom<G: GameLogic> {
