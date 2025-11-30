@@ -74,7 +74,8 @@ impl GameLogic for TestGame {
 pub async fn await_event(
     event: &mut mpsc::Receiver<UiEvent<TestGame>>,
 ) -> anyhow::Result<UiEvent<TestGame>> {
-    let duration = Duration::from_secs(2);
+    // Long timeout is to give reconnections time to happen.
+    let duration = Duration::from_secs(60);
     tokio::time::timeout(duration, event.recv())
         .await?
         .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
