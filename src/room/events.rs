@@ -1,7 +1,6 @@
 use crate::{
-    GameLogic, GameRoom, PlayerInfo,
-    player::PlayerStatus,
-    room::{AppState, PlayerMap, chat::ChatMessage, state::*},
+    AppState, GameLogic, GameRoom, PeerMap, PeerProfile, PeerStatus,
+    room::{chat::ChatMessage, state::*},
 };
 use anyhow::{Result, anyhow};
 use iroh::EndpointId;
@@ -18,10 +17,10 @@ use tokio::{sync::mpsc, task::JoinHandle};
 /// Public events your library will send to the game UI
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiEvent<G: GameLogic> {
-    Player(PlayerMap),
+    Peer(PeerMap),
     GameState(G::GameState),
     AppState(AppState),
-    Chat { id: PlayerInfo, msg: ChatMessage },
+    Chat { sender: String, msg: ChatMessage },
     Host(HostEvent),
     Error(String), // TODO replace with AppError including G::GameError
 }
@@ -33,16 +32,16 @@ pub enum HostEvent {
     /// Host has disconnected
     Offline,
     /// A new host has been assigned
-    Changed { to: PlayerInfo },
+    Changed { to: String },
 }
 
 impl<G: GameLogic> Display for UiEvent<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UiEvent::Player(players) => write!(f, "LobbyUpdated({players})"),
-            UiEvent::GameState(state) => write!(f, "StateUpdated({state:?})"),
+            UiEvent::Peer(peers) => write!(f, "PeerUpdated({peers})"),
+            UiEvent::GameState(state) => write!(f, "GameStateUpdated({state:?})"),
             UiEvent::AppState(state) => write!(f, "AppStateChanged({state:?})"),
-            UiEvent::Chat { id: _, msg } => write!(f, "ChatReceived({msg:?})"),
+            UiEvent::Chat { sender: _, msg } => write!(f, "Chat({msg:?})"),
             UiEvent::Host(HostEvent::Changed { to }) => write!(f, "HostSet({to})"),
             UiEvent::Host(HostEvent::Offline) => write!(f, "HostOffline"),
             UiEvent::Host(HostEvent::Online) => write!(f, "HostOnline"),
@@ -71,7 +70,7 @@ impl<G: GameLogic> GameRoom<G> {
                             Some(event) => event,
                             None => continue,
                         };
-                        println!("[[[> {} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
+                        println!("{} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
                                 "Host"
                             } else {
                                 "Client"
@@ -82,7 +81,7 @@ impl<G: GameLogic> GameRoom<G> {
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     // Send the event to the UI
-                                    println!("---> {} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
+                                    println!("{} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
                                         "Host"
                                     } else {
                                         "Client"
@@ -95,10 +94,10 @@ impl<G: GameLogic> GameRoom<G> {
                             NetworkEvent::Joiner(id) => {
                                 println!("Joiner: {id}");
                                 // A peer has connected, if we are the host we can set its status to online
-                                // if they are in our player list already
+                                // if they are in our peer list already
                                 if state_data.is_host().await.unwrap_or(false) {
                                     println!("Host is updating status for {id} to Online");
-                                    state_data.set_player_status(&id, PlayerStatus::Online).await.ok();
+                                    state_data.set_peer_status(&id, PeerStatus::Online).await.ok();
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                     // If we are a client, we only care if the peer that joined was the host.
                                     println!("Client detected host reconnection.");
@@ -110,10 +109,10 @@ impl<G: GameLogic> GameRoom<G> {
                             },
                             NetworkEvent::Leaver(id) => {
                                 // A peer has disconnected from us.
-                                // If we are the host, we are responsible for updating the player's status.
+                                // If we are the host, we are responsible for updating the peer's status.
                                 if state_data.is_host().await.unwrap_or(false) {
                                     println!("Host is updating status for {id} to Offline");
-                                    state_data.set_player_status(&id, PlayerStatus::Offline).await.ok();
+                                    state_data.set_peer_status(&id, PeerStatus::Offline).await.ok();
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                         // If we are a client, we only care if the peer that dropped was the host.
                                         println!("Client detected host disconnection.");
@@ -146,34 +145,24 @@ async fn process_entry<G: GameLogic>(
     data: &StateData<G>,
     logic: &Arc<G>,
 ) -> Result<Option<UiEvent<G>>> {
-    #[cfg(debug_assertions)]
-    println!(
-        ">>> {} processing entry: {:?}",
-        if data.is_host().await? {
-            "Host"
-        } else {
-            "Client"
-        },
-        String::from_utf8_lossy(entry.key())
-    );
     // --- HOST LOGIC ---
     if let Some(node_id) = entry.is_join() {
         if !data.is_host().await? {
             return Ok(None);
         }
         let node_id = node_id?;
-        // A player has joined the game room.
-        // Get the PlayerInfo payload
-        let player_info = match data.parse::<PlayerInfo>(&entry).await {
-            Ok(info) => info,
+        // A peer has joined the game room.
+        // Get the PeerProfile payload
+        let profile = match data.parse::<PeerProfile>(&entry).await {
+            Ok(profile) => profile,
             Err(e) => {
-                return Err(anyhow!("Failed to parse PlayerInfo for {}: {e}", &node_id,));
+                return Err(anyhow!("Failed to parse PeerInfo for {}: {e}", &node_id,));
             }
         };
-        // Broadcast the new canonical player list
-        data.insert_player(node_id, &player_info).await?;
-        // The `insert_player` will trigger a `player_entry` live event, which will
-        // in turn trigger the `LobbyUpdated` ui event. So we don't need to return anything here.
+        // Broadcast the new canonical peer list
+        data.insert_peer(&node_id, profile).await?;
+        // The `insert_peer` will trigger a `peer_entry` live event, which will
+        // in turn trigger the `Peer` ui event. So we don't need to return anything here.
         return Ok(None);
     } else if let Some(node_id) = entry.is_action_request() {
         if !data.is_host().await? {
@@ -188,37 +177,34 @@ async fn process_entry<G: GameLogic>(
                 // Apply the game logic and broadcast the new authoritative state
                 match logic.apply_action(current_state, &node_id, &action) {
                     Err(e) => {
-                        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                        return Err(anyhow!("Invalid action from {player}: {e}"));
+                        let peer = data.get_peer_name(&node_id).await?;
+                        return Err(anyhow!("Invalid action from {peer}: {e}"));
                     }
                     Ok(()) => data.set_game_state(current_state).await?,
                 };
             }
             Err(e) => {
-                let player = data.get_player_info(&node_id).await?.unwrap_or_default();
-                return Err(anyhow!("Failed to parse GameAction from {player}: {e}",));
+                let peer = data.get_peer_name(&node_id).await?;
+                return Err(anyhow!("Failed to parse GameAction from {peer}: {e}",));
             }
         }
-        // The `set_game_state`` will trigger a `game_state_update` live event, which will
-        // in turn trigger the `StateUpdated` ui event. So we don't need to return anything here.
+        // The `set_game_state` will trigger a `game_state_update` live event, which will
+        // in turn trigger the `GameState` ui event. So we don't need to return anything here.
         return Ok(None);
     }
-    // --- ALL-PLAYERS LOGIC ---
+    // --- ALL-PEERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
-        let player = data.get_player_info(&node_id).await?.unwrap_or_default();
+        let sender = data.get_peer_name(&node_id).await?;
         return match data.parse::<ChatMessage>(&entry).await {
-            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {player}: {e}")),
-            Ok(msg) => Ok(Some(UiEvent::Chat {
-                id: player.clone(),
-                msg,
-            })),
+            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {sender}: {e}")),
+            Ok(msg) => Ok(Some(UiEvent::Chat { sender, msg })),
         };
-    } else if entry.is_player_entry() {
-        // A player entry has been added/updated. Fetch the whole list to signal an update.
-        return match data.get_players_list().await {
-            Err(e) => Err(anyhow!("Failed to get players list after update: {e}")),
-            Ok(players) => Ok(Some(UiEvent::Player(players))),
+    } else if entry.is_peer_entry() {
+        // A peer entry has been added/updated. Fetch the whole list to signal an update.
+        return match data.get_peer_list().await {
+            Err(e) => Err(anyhow!("Failed to get peers list after update: {e}")),
+            Ok(peers) => Ok(Some(UiEvent::Peer(peers))),
         };
     } else if entry.is_game_state_update() {
         // The game state has been updated by the host.
@@ -239,8 +225,8 @@ async fn process_entry<G: GameLogic>(
             Ok(host_id) => {
                 data.host_online(); // the host has come back online or been claimed.
                 let host_id = endpoint_id_from_str(&String::from_utf8_lossy(&host_id))?;
-                let player = data.get_player_info(&host_id).await?.unwrap_or_default();
-                Ok(Some(UiEvent::Host(HostEvent::Changed { to: player })))
+                let peer = data.get_peer_name(&host_id).await?;
+                Ok(Some(UiEvent::Host(HostEvent::Changed { to: peer })))
             }
         };
     } else if let Some(node_id) = entry.is_quit_request() {

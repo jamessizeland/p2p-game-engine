@@ -3,7 +3,7 @@ use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, error::Error, fmt::Debug};
 
-use crate::PlayerMap;
+use crate::PeerMap;
 
 /// Generic Trait for p2p turn based games.
 pub trait GameLogic: Debug + Send + Sync + 'static {
@@ -14,7 +14,7 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     type GameError: Error + Send + Sync;
 
     /// Assigns roles to players at the start of the game.
-    fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole>;
+    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole>;
 
     /// Creates the initial game state from the lobby info.
     fn initial_state(&self, roles: &HashMap<EndpointId, Self::PlayerRole>) -> Self::GameState;
@@ -30,7 +30,7 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     /// Check that all game specific conditions are met for starting this game.
     fn start_conditions_met(
         &self,
-        players: &PlayerMap,
+        players: &PeerMap,
         current_state: &Self::GameState,
     ) -> Result<(), Self::GameError>;
 }

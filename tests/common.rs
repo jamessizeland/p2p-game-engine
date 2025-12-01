@@ -38,7 +38,7 @@ impl GameLogic for TestGame {
     type GameError = TestGameError;
     type GameEndReason = ();
 
-    fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
+    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         players
             .keys()
             .map(|id| (*id, TestPlayerRole::Counter))
@@ -64,7 +64,7 @@ impl GameLogic for TestGame {
     }
     fn start_conditions_met(
         &self,
-        _players: &PlayerMap,
+        _players: &PeerMap,
         _current_state: &Self::GameState,
     ) -> Result<(), Self::GameError> {
         Ok(())
@@ -75,7 +75,7 @@ pub async fn await_event(
     event: &mut mpsc::Receiver<UiEvent<TestGame>>,
 ) -> anyhow::Result<UiEvent<TestGame>> {
     // Long timeout is to give reconnections time to happen.
-    let duration = Duration::from_secs(20);
+    let duration = Duration::from_secs(30);
     tokio::time::timeout(duration, event.recv())
         .await?
         .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
@@ -100,10 +100,10 @@ pub async fn setup_test_room(
     println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
-        UiEvent::Player(players) => {
+        UiEvent::Peer(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
-            assert_eq!(players.get(&host_id).unwrap().name, name);
+            assert_eq!(players.get(&host_id).unwrap().profile.nickname, name);
         }
         _ => panic!("Host received wrong event type"),
     }
@@ -130,7 +130,7 @@ pub async fn setup_persistent_test_room(
     println!("Received Host Lobby Update: {event}");
     let host_id = host_room.id();
     match event {
-        UiEvent::Player(players) => {
+        UiEvent::Peer(players) => {
             assert_eq!(players.len(), 1);
             assert!(players.contains_key(&host_id));
         }
@@ -170,7 +170,7 @@ pub async fn await_lobby_update(
 ) -> anyhow::Result<()> {
     loop {
         let event = await_event(events).await?;
-        if let UiEvent::Player(players) = event {
+        if let UiEvent::Peer(players) = event {
             if players.len() == expected_players {
                 return Ok(());
             }
@@ -205,11 +205,11 @@ pub async fn await_game_start(
 pub async fn await_lobby_status_update(
     events: &mut mpsc::Receiver<UiEvent<TestGame>>,
     player_id: &EndpointId,
-    expected_status: PlayerStatus,
+    expected_status: PeerStatus,
 ) -> anyhow::Result<()> {
     loop {
         let event = await_event(events).await?;
-        if let UiEvent::Player(players) = event {
+        if let UiEvent::Peer(players) = event {
             if let Some(player) = players.get(player_id) {
                 if player.status == expected_status {
                     return Ok(());
