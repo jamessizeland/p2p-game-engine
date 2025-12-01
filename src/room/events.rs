@@ -70,7 +70,7 @@ impl<G: GameLogic> GameRoom<G> {
                             Some(event) => event,
                             None => continue,
                         };
-                        println!("[[[> {} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
+                        println!("{} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
                                 "Host"
                             } else {
                                 "Client"
@@ -81,7 +81,7 @@ impl<G: GameLogic> GameRoom<G> {
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     // Send the event to the UI
-                                    println!("---> {} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
+                                    println!("{} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
                                         "Host"
                                     } else {
                                         "Client"
@@ -145,16 +145,6 @@ async fn process_entry<G: GameLogic>(
     data: &StateData<G>,
     logic: &Arc<G>,
 ) -> Result<Option<UiEvent<G>>> {
-    #[cfg(debug_assertions)]
-    println!(
-        ">>> {} processing entry: {:?}",
-        if data.is_host().await? {
-            "Host"
-        } else {
-            "Client"
-        },
-        String::from_utf8_lossy(entry.key())
-    );
     // --- HOST LOGIC ---
     if let Some(node_id) = entry.is_join() {
         if !data.is_host().await? {
