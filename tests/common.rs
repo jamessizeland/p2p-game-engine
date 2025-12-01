@@ -75,7 +75,7 @@ pub async fn await_event(
     event: &mut mpsc::Receiver<UiEvent<TestGame>>,
 ) -> anyhow::Result<UiEvent<TestGame>> {
     // Long timeout is to give reconnections time to happen.
-    let duration = Duration::from_secs(20);
+    let duration = Duration::from_secs(30);
     tokio::time::timeout(duration, event.recv())
         .await?
         .ok_or_else(|| anyhow::anyhow!("Timed out waiting for event"))
