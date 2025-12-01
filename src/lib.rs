@@ -5,5 +5,5 @@ mod room;
 
 pub use iroh::Iroh;
 pub use logic::GameLogic;
-pub use player::{PlayerInfo, PlayerMap};
-pub use room::{AppState, GameRoom, UiEvent};
+pub use player::{PlayerInfo, PlayerMap, PlayerStatus};
+pub use room::{AppState, GameRoom, HostEvent, LeaveReason, UiEvent};

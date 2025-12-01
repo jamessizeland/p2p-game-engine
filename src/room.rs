@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
-pub use events::UiEvent;
-pub use state::{AppState, StateData};
+pub use events::{HostEvent, UiEvent};
+pub use state::{AppState, LeaveReason, StateData};
 
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
@@ -54,9 +54,9 @@ impl<G: GameLogic> GameRoom<G> {
     pub fn id(&self) -> EndpointId {
         self.endpoint_id
     }
-    /// Read this room's join ticket
-    pub fn ticket(&self) -> &DocTicket {
-        &self.ticket
+    /// Get a fresh join ticket for this room, including all known peer addresses.
+    pub async fn ticket(&self) -> Result<DocTicket> {
+        self.state.ticket().await
     }
 
     /// Start the Game
@@ -64,7 +64,6 @@ impl<G: GameLogic> GameRoom<G> {
         if !self.is_host().await? {
             return Err(anyhow::anyhow!("Only the host can start the game"));
         }
-        // TODO add mechanism for getting and checking that all players are ready
         if self.get_app_state().await? != AppState::Lobby {
             return Err(anyhow::anyhow!("Game has already started"));
         }

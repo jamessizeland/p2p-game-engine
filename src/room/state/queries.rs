@@ -1,21 +1,39 @@
 use super::*;
-use crate::{GameLogic, PlayerInfo, PlayerMap};
+use crate::{GameLogic, PlayerInfo, PlayerMap, PlayerStatus};
 use anyhow::Result;
 use n0_future::StreamExt;
 
 impl<G: GameLogic> StateData<G> {
     /// Check the document to see if we are the host
     pub async fn is_host(&self) -> Result<bool> {
+        self.is_peer_host(&self.endpoint_id).await
+    }
+
+    /// Check the document to see if a given peer is the host
+    pub async fn is_peer_host(&self, peer_id: &EndpointId) -> Result<bool> {
         if let Some(bytes) = self.get_bytes(KEY_HOST_ID).await? {
-            let host_id = String::from_utf8_lossy(&bytes);
-            Ok(self.endpoint_id.to_string() == host_id)
+            let host_id_str = String::from_utf8_lossy(&bytes);
+            Ok(peer_id.to_string() == host_id_str)
         } else {
             Ok(false)
         }
     }
 
+    /// Get the ID of the endpoint registered as host.
+    pub async fn get_host_id(&self) -> Result<EndpointId> {
+        if let Some(bytes) = self.get_bytes(KEY_HOST_ID).await? {
+            let host_id_str = String::from_utf8_lossy(&bytes);
+            Ok(EndpointId::from_str(&host_id_str)?)
+        } else {
+            Err(anyhow::anyhow!("No HostId found"))
+        }
+    }
+
     /// Get the AppState.
     pub async fn get_app_state(&self) -> Result<AppState> {
+        if self.is_host_disconnected() {
+            return Ok(AppState::Paused);
+        };
         if let Some(bytes) = self.get_bytes(KEY_APP_STATE).await? {
             Ok(postcard::from_bytes(&bytes)?)
         } else {
@@ -39,13 +57,21 @@ impl<G: GameLogic> StateData<G> {
         let mut players = PlayerMap::default();
         while let Some(entry_result) = entries.next().await {
             let entry = entry_result?;
-            let player_info: PlayerInfo = self.iroh.get_content_as(&entry).await?;
+            let player_info: PlayerInfo = self.iroh()?.get_content_as(&entry).await?;
             let key_str = String::from_utf8_lossy(entry.key());
             let id_str = key_str
                 .strip_prefix(std::str::from_utf8(PREFIX_PLAYER)?)
-                .unwrap();
+                .expect("Key format should be valid from previous query");
             let player_id = EndpointId::from_str(id_str)?;
             players.insert(player_id, player_info);
+        }
+        if self.is_host_disconnected() {
+            // modify the host's status to indicate that they are offline
+            if let Some(host_id) = self.get_host_id().await.ok() {
+                if let Some(host) = players.get_mut(&host_id) {
+                    host.status = PlayerStatus::Offline;
+                }
+            }
         }
         Ok(players)
     }
@@ -68,7 +94,7 @@ impl<G: GameLogic> StateData<G> {
             .get_one(Query::single_latest_per_key().key_exact(key));
         Ok(match query.await? {
             None => None,
-            Some(entry) => Some(self.iroh.get_content_bytes(&entry).await?),
+            Some(entry) => Some(self.iroh()?.get_content_bytes(&entry).await?),
         })
     }
 }

@@ -7,9 +7,17 @@ use std::{
 use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerStatus {
+    Online,
+    Offline,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PlayerInfo {
     pub name: String,
+    pub status: PlayerStatus,
+    pub is_observer: bool,
 }
 
 impl Display for PlayerInfo {
@@ -22,6 +30,8 @@ impl Default for PlayerInfo {
     fn default() -> Self {
         Self {
             name: "Unknown".to_string(),
+            status: PlayerStatus::Online,
+            is_observer: true,
         }
     }
 }
@@ -30,11 +40,13 @@ impl Into<PlayerInfo> for &str {
     fn into(self) -> PlayerInfo {
         PlayerInfo {
             name: self.to_string(),
+            status: PlayerStatus::Online,
+            is_observer: true,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PlayerMap(HashMap<EndpointId, PlayerInfo>);
 
 impl Deref for PlayerMap {
