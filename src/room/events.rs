@@ -205,10 +205,10 @@ async fn process_entry<G: GameLogic>(
     // --- ALL-PEERS LOGIC ---
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
-        let peer = data.get_peer_name(&node_id).await?;
+        let sender = data.get_peer_name(&node_id).await?;
         return match data.parse::<ChatMessage>(&entry).await {
-            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {peer}: {e}")),
-            Ok(msg) => Ok(Some(UiEvent::Chat { sender: peer, msg })),
+            Err(e) => Err(anyhow!("Failed to parse ChatMessage from {sender}: {e}")),
+            Ok(msg) => Ok(Some(UiEvent::Chat { sender, msg })),
         };
     } else if entry.is_peer_entry() {
         // A peer entry has been added/updated. Fetch the whole list to signal an update.
