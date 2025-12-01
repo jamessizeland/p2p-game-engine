@@ -1,9 +1,9 @@
 mod iroh;
 mod logic;
-mod player;
+mod peer;
 mod room;
 
 pub use iroh::Iroh;
 pub use logic::GameLogic;
-pub use player::{PlayerInfo, PlayerMap, PlayerStatus};
-pub use room::{AppState, GameRoom, HostEvent, LeaveReason, UiEvent};
+pub use peer::{PeerInfo, PeerMap, PeerProfile, PeerStatus};
+pub use room::{AppState, ChatMessage, GameRoom, HostEvent, LeaveReason, UiEvent};

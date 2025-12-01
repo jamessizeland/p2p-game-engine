@@ -4,7 +4,7 @@ mod chat;
 mod events;
 mod state;
 
-use crate::{GameLogic, PlayerMap};
+use crate::{GameLogic, PeerMap};
 use anyhow::Result;
 use iroh::EndpointId;
 use iroh_docs::DocTicket;
@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
+pub use chat::ChatMessage;
 pub use events::{HostEvent, UiEvent};
 pub use state::{AppState, LeaveReason, StateData};
 
@@ -68,7 +69,7 @@ impl<G: GameLogic> GameRoom<G> {
             return Err(anyhow::anyhow!("Game has already started"));
         }
 
-        let players: PlayerMap = self.get_players_list().await?;
+        let players: PeerMap = self.get_peer_list().await?;
         let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players);
         let initial_state: G::GameState = self.logic.initial_state(&roles);
         self.logic.start_conditions_met(&players, &initial_state)?;

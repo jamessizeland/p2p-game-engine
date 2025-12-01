@@ -20,11 +20,14 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Received Host Lobby Update: {event}");
     let client_id = client_room.id();
     match event {
-        UiEvent::Player(players) => {
+        UiEvent::Peer(players) => {
             assert_eq!(players.len(), 2);
             assert!(players.contains_key(&client_id));
             assert!(players.contains_key(&host_id));
-            assert_eq!(players.get(&client_id).unwrap().name, client_name);
+            assert_eq!(
+                players.get(&client_id).unwrap().profile.nickname,
+                client_name
+            );
         }
         _ => panic!("Host received wrong event type"),
     }
@@ -32,11 +35,14 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     println!("Getting player map from host room...");
 
     // Host can also query the state directly
-    let players = host_room.get_players_list().await?;
+    let players = host_room.get_peer_list().await?;
     println!("Players: {players}");
     assert_eq!(players.len(), 2);
     assert!(players.contains_key(&client_id));
-    assert_eq!(players.get(&client_id).unwrap().name, client_name);
+    assert_eq!(
+        players.get(&client_id).unwrap().profile.nickname,
+        client_name
+    );
     println!("Host direct query successful.");
 
     // Client should first receive the lobby update and the initial lobby state
@@ -44,10 +50,10 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
         let event = await_event(&mut client_events).await?;
         println!("event: {event}");
         match event {
-            UiEvent::Player(_) => { /* Good */ }
+            UiEvent::Peer(_) => { /* Good */ }
             UiEvent::AppState(AppState::Lobby) => { /* Good */ }
             UiEvent::Host(HostEvent::Changed { to }) => {
-                assert_eq!(to.name, host_name);
+                assert_eq!(to, host_name);
             }
             other => panic!("Client received wrong event type during lobby phase: {other:?}"),
         }

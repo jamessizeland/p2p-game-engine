@@ -8,67 +8,80 @@ use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlayerStatus {
+pub enum PeerStatus {
     Online,
     Offline,
 }
 
+/// Personalisation Information about this peer
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct PlayerInfo {
-    pub name: String,
-    pub status: PlayerStatus,
-    pub is_observer: bool,
+pub struct PeerProfile {
+    /// Name used to introduce the peer
+    pub nickname: String,
+    /// Avatar URL
+    pub avatar: Option<String>,
 }
 
-impl Display for PlayerInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl Default for PlayerInfo {
-    fn default() -> Self {
-        Self {
-            name: "Unknown".to_string(),
-            status: PlayerStatus::Online,
-            is_observer: true,
+impl Into<PeerProfile> for &str {
+    fn into(self) -> PeerProfile {
+        PeerProfile {
+            nickname: self.to_string(),
+            avatar: None,
         }
     }
 }
 
-impl Into<PlayerInfo> for &str {
-    fn into(self) -> PlayerInfo {
-        PlayerInfo {
-            name: self.to_string(),
-            status: PlayerStatus::Online,
+/// General Information about this peer
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PeerInfo {
+    pub id: EndpointId,
+    pub profile: PeerProfile,
+    pub status: PeerStatus,
+    pub ready: bool,
+    pub is_observer: bool,
+}
+
+impl Display for PeerInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.profile.nickname)
+    }
+}
+
+impl PeerInfo {
+    pub fn new(id: EndpointId, profile: PeerProfile) -> Self {
+        Self {
+            id,
+            profile,
+            status: PeerStatus::Online,
+            ready: false,
             is_observer: true,
         }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
-pub struct PlayerMap(HashMap<EndpointId, PlayerInfo>);
+pub struct PeerMap(HashMap<EndpointId, PeerInfo>);
 
-impl Deref for PlayerMap {
-    type Target = HashMap<EndpointId, PlayerInfo>;
+impl Deref for PeerMap {
+    type Target = HashMap<EndpointId, PeerInfo>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl DerefMut for PlayerMap {
+impl DerefMut for PeerMap {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl Display for PlayerMap {
+impl Display for PeerMap {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for (id, player) in self.0.iter() {
+        for (id, peer_info) in self.0.iter() {
             let mut id = id.to_string();
             id.truncate(10);
-            write!(f, "[{}...]: '{}'\n", id, player)?;
+            write!(f, "[{}...]: '{}'\n", id, peer_info)?;
         }
         Ok(())
     }

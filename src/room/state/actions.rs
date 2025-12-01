@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::*;
-use crate::{GameLogic, PlayerInfo, player::PlayerStatus, room::chat::ChatMessage};
+use crate::{ChatMessage, GameLogic, PeerInfo, PeerProfile, PeerStatus};
 use anyhow::Result;
 use tokio::time::sleep;
 
@@ -40,22 +40,24 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(&chat_key.into_bytes(), &value).await
     }
 
-    /// Add a player to the players list
-    pub async fn insert_player(&self, player_id: EndpointId, player: &PlayerInfo) -> Result<()> {
-        let key = format!("{}{}", std::str::from_utf8(PREFIX_PLAYER)?, player_id);
-        let value = postcard::to_stdvec(player)?;
+    /// Add a peer to the peers list
+    pub async fn insert_peer(&self, peer_id: &EndpointId, profile: PeerProfile) -> Result<()> {
+        let peer_info = PeerInfo::new(*peer_id, profile);
+        self.update_peer(peer_id, peer_info).await
+    }
+
+    /// Update a peer's info, or add them if they don't exist.
+    pub async fn update_peer(&self, peer_id: &EndpointId, peer_info: PeerInfo) -> Result<()> {
+        let key = format!("{}{}", std::str::from_utf8(PREFIX_PEER)?, peer_id);
+        let value = postcard::to_stdvec(&peer_info)?;
         self.set_bytes(key.as_bytes(), &value).await
     }
 
-    /// Set a player's online/offline status, if they are in our player list
-    pub async fn set_player_status(
-        &self,
-        player_id: &EndpointId,
-        status: PlayerStatus,
-    ) -> Result<()> {
-        if let Some(mut player_info) = self.get_player_info(player_id).await? {
-            player_info.status = status;
-            self.insert_player(*player_id, &player_info).await?;
+    /// Set a peer's online/offline status, if they are in our peer list
+    pub async fn set_peer_status(&self, peer_id: &EndpointId, status: PeerStatus) -> Result<()> {
+        if let Some(mut peer_info) = self.get_peer_info(peer_id).await? {
+            peer_info.status = status;
+            self.update_peer(peer_id, peer_info).await?;
         }
         Ok(())
     }
@@ -71,9 +73,9 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Announce that we have joined the room.
-    pub async fn announce_presence(&self, player: impl Into<PlayerInfo>) -> Result<()> {
+    pub async fn announce_presence(&self, introduction: impl Into<PeerProfile>) -> Result<()> {
         let join_key = format!("{}{}", str::from_utf8(PREFIX_JOIN)?, self.endpoint_id);
-        let value = postcard::to_stdvec(&player.into())?;
+        let value = postcard::to_stdvec(&introduction.into())?;
         self.set_bytes(&join_key.into_bytes(), &value).await
     }
 

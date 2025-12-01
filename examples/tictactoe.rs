@@ -19,7 +19,7 @@
 use anyhow::Result;
 use clap::Parser;
 use iroh::EndpointId;
-use p2p_game_engine::{GameLogic, GameRoom, HostEvent, PlayerMap, UiEvent};
+use p2p_game_engine::{GameLogic, GameRoom, HostEvent, PeerMap, UiEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -127,7 +127,7 @@ impl GameLogic for TicTacToeLogic {
     type GameError = GameError;
     type GameEndReason = ();
 
-    fn assign_roles(&self, players: &PlayerMap) -> HashMap<EndpointId, Self::PlayerRole> {
+    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         // The first two players become X and O. Everyone else is an observer.
         let mut roles = HashMap::new();
         let mut player_roles = [PlayerRole::X, PlayerRole::O].into_iter();
@@ -165,7 +165,7 @@ impl GameLogic for TicTacToeLogic {
 
     fn start_conditions_met(
         &self,
-        players: &PlayerMap,
+        players: &PeerMap,
         current_state: &Self::GameState,
     ) -> std::result::Result<(), Self::GameError> {
         if players.len() < 2 {
@@ -339,8 +339,9 @@ async fn main() -> Result<()> {
             // Handle game events
             Some(event) = events.recv() => {
                 match event {
-                    UiEvent::Player(players) => {
-                        println!("\nLobby updated. Players now: {:?}", players.values().map(|p|&p.name).collect::<Vec<_>>());
+                    UiEvent::Peer(players) => {
+                        let player_list: Vec<&String> = players.values().map(|p|&p.profile.nickname).collect();
+                        println!("\nPeers updated. Players now: {player_list:?}");
                     }
                     UiEvent::GameState(state) => {
                         if let Some(role) = state.roles.get(&room.id()) {
@@ -350,13 +351,13 @@ async fn main() -> Result<()> {
                         }
                         print_board(&state);
                     },
-                    UiEvent::Chat{id, msg} => {
+                    UiEvent::Chat{sender, msg} => {
                         let from = if msg.from == room.id() { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
-                        println!("\n[Chat] {}: {}\n{}", id.name, msg.message, msg.from);
+                        println!("\n[Chat] {sender}: {}\n{}", msg.message, msg.from);
                     }
-                    UiEvent::Error(e) => eprintln!("\nAn error occurred: {}", e),
+                    UiEvent::Error(e) => eprintln!("\nAn error occurred: {e}"),
                     UiEvent::AppState(app_state) => {
-                        println!("\nGame state changed to: {:?}", app_state);
+                        println!("\nGame state changed to: {app_state:?}");
                     }
                     UiEvent::Host(HostEvent::Offline) => {
                         println!("\nGame Host disconnected. The game is paused");

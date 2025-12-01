@@ -32,16 +32,16 @@ pub(self) const PREFIX_JOIN: &[u8] = b"join_request.";
 pub(self) const PREFIX_QUIT: &[u8] = b"quit_request.";
 pub(self) const PREFIX_ACTION: &[u8] = b"action.";
 pub(self) const PREFIX_CHAT: &[u8] = b"chat.";
-pub(self) const PREFIX_PLAYER: &[u8] = b"player.";
+pub(self) const PREFIX_PEER: &[u8] = b"peer.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
 pub enum LeaveReason<G: GameLogic> {
-    /// Player has closed the application.
+    /// Peer has closed the application.
     ApplicationClosed,
-    /// Player has timed out.
+    /// Peer has timed out.
     Timeout,
-    /// Player has chosen to end their participation in this game.
+    /// Peer has chosen to end their participation in this game.
     Forfeit,
     /// Something has gone wrong and an error has been reported.
     Error(String),
@@ -155,8 +155,8 @@ pub trait GameKey {
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
     /// This entry is a quit announcement, return the ID of the quitter.
     fn is_quit_request(&self) -> Option<Result<EndpointId>>;
-    /// A player entry has been updated
-    fn is_player_entry(&self) -> bool;
+    /// A peer entry has been updated
+    fn is_peer_entry(&self) -> bool;
     /// Game State has updated
     fn is_game_state_update(&self) -> bool;
     /// App State has updated
@@ -199,8 +199,8 @@ impl GameKey for Entry {
         let id = String::from_utf8_lossy(&self.key()[PREFIX_QUIT.len()..]);
         Some(endpoint_id_from_str(&id))
     }
-    fn is_player_entry(&self) -> bool {
-        self.key().starts_with(PREFIX_PLAYER)
+    fn is_peer_entry(&self) -> bool {
+        self.key().starts_with(PREFIX_PEER)
     }
     fn is_game_state_update(&self) -> bool {
         self.key() == KEY_GAME_STATE
