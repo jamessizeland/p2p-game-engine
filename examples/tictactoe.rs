@@ -125,7 +125,7 @@ impl GameLogic for TicTacToeLogic {
     type GameAction = TicTacToeAction;
     type PlayerRole = PlayerRole;
     type GameError = GameError;
-    type GameEndReason = ();
+    type PlayerLeaveReason = ();
 
     fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         // The first two players become X and O. Everyone else is an observer.
@@ -173,6 +173,26 @@ impl GameLogic for TicTacToeLogic {
         } else {
             Ok(())
         }
+    }
+
+    fn handle_player_disconnect(
+        &self,
+        players: &mut PeerMap,
+        player_id: &EndpointId,
+        current_state: &mut Self::GameState,
+    ) -> std::result::Result<(), Self::GameError> {
+        // TODO add disconnect behaviour.
+        Ok(())
+    }
+
+    fn handle_player_reconnect(
+        &self,
+        players: &mut PeerMap,
+        player_id: &EndpointId,
+        current_state: &mut Self::GameState,
+    ) -> std::result::Result<(), Self::GameError> {
+        // TODO add reconnect behaviour.
+        Ok(())
     }
 
     fn apply_action(
