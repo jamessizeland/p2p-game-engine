@@ -36,7 +36,7 @@ impl GameLogic for TestGame {
     type GameAction = TestGameAction;
     type PlayerRole = TestPlayerRole;
     type GameError = TestGameError;
-    type GameEndReason = ();
+    type PlayerLeaveReason = ();
 
     fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
         players
@@ -66,6 +66,22 @@ impl GameLogic for TestGame {
         &self,
         _players: &PeerMap,
         _current_state: &Self::GameState,
+    ) -> Result<(), Self::GameError> {
+        Ok(())
+    }
+    fn handle_player_disconnect(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<(), Self::GameError> {
+        Ok(())
+    }
+    fn handle_player_reconnect(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
     ) -> Result<(), Self::GameError> {
         Ok(())
     }

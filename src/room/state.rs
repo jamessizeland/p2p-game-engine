@@ -46,7 +46,7 @@ pub enum LeaveReason<G: GameLogic> {
     /// Something has gone wrong and an error has been reported.
     Error(String),
     /// Something else has happened that is expected.
-    Custom(G::GameEndReason),
+    Custom(G::PlayerLeaveReason),
     /// An unknown error has occurred.
     Unknown,
 }

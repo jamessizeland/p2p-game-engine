@@ -70,37 +70,37 @@ impl<G: GameLogic> GameRoom<G> {
                             Some(event) => event,
                             None => continue,
                         };
-                        println!("{} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
-                                "Host"
-                            } else {
-                                "Client"
-                            });
+                        // println!("{} Network event: {network_event:?}", if state_data.is_host().await.unwrap_or(false) {
+                        //         "Host"
+                        //     } else {
+                        //         "Client"
+                        //     });
                         match network_event {
                             NetworkEvent::Update(entry) => match process_entry(&entry, &state_data, &logic).await {
                                 Err(e) => eprintln!("Error processing event: {e}"),
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     // Send the event to the UI
-                                    println!("{} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
-                                        "Host"
-                                    } else {
-                                        "Client"
-                                    });
+                                    // println!("{} UI event: {event}", if state_data.is_host().await.unwrap_or(false) {
+                                    //     "Host"
+                                    // } else {
+                                    //     "Client"
+                                    // });
                                     if sender.send(event).await.is_err() {
                                         break; // Channel closed
                                     }
                                 }
                             },
                             NetworkEvent::Joiner(id) => {
-                                println!("Joiner: {id}");
+                                // println!("Joiner: {id}");
                                 // A peer has connected, if we are the host we can set its status to online
                                 // if they are in our peer list already
                                 if state_data.is_host().await.unwrap_or(false) {
-                                    println!("Host is updating status for {id} to Online");
+                                    // println!("Host is updating status for {id} to Online");
                                     state_data.set_peer_status(&id, PeerStatus::Online).await.ok();
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                     // If we are a client, we only care if the peer that joined was the host.
-                                    println!("Client detected host reconnection.");
+                                    // println!("Client detected host reconnection.");
                                     state_data.host_online();
                                     if sender.send(UiEvent::Host(HostEvent::Online)).await.is_err() {
                                             break; // Channel closed
@@ -111,7 +111,7 @@ impl<G: GameLogic> GameRoom<G> {
                                 // A peer has disconnected from us.
                                 // If we are the host, we are responsible for updating the peer's status.
                                 if state_data.is_host().await.unwrap_or(false) {
-                                    println!("Host is updating status for {id} to Offline");
+                                    // println!("Host is updating status for {id} to Offline");
                                     state_data.set_peer_status(&id, PeerStatus::Offline).await.ok();
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                         // If we are a client, we only care if the peer that dropped was the host.
@@ -124,7 +124,7 @@ impl<G: GameLogic> GameRoom<G> {
                             },
                             NetworkEvent::SyncFailed(reason) => {
                                 let error = UiEvent::Error(format!("Sync failed: {reason}"));
-                                eprintln!("Error processing event: {error}");
+                                // eprintln!("Error processing event: {error}");
                                 if sender.send(error).await.is_err() {
                                         break; // Channel closed
                                     }
@@ -239,7 +239,7 @@ async fn process_entry<G: GameLogic>(
             return Ok(None); // TODO handle preparing leaver
         }
     }
-    println!("unknown event: {entry:?}");
+    // println!("unknown event: {entry:?}");
     Ok(None)
 }
 
