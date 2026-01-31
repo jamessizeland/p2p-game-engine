@@ -25,14 +25,14 @@ use std::{
 use crate::{GameLogic, Iroh};
 
 // --- Key Prefixes ---
-pub(self) const KEY_APP_STATE: &[u8] = b"app_state";
-pub(self) const KEY_HOST_ID: &[u8] = b"host_id";
-pub(self) const KEY_GAME_STATE: &[u8] = b"game_state";
-pub(self) const PREFIX_JOIN: &[u8] = b"join_request.";
-pub(self) const PREFIX_QUIT: &[u8] = b"quit_request.";
-pub(self) const PREFIX_ACTION: &[u8] = b"action.";
-pub(self) const PREFIX_CHAT: &[u8] = b"chat.";
-pub(self) const PREFIX_PEER: &[u8] = b"peer.";
+const KEY_APP_STATE: &[u8] = b"app_state";
+const KEY_HOST_ID: &[u8] = b"host_id";
+const KEY_GAME_STATE: &[u8] = b"game_state";
+const PREFIX_JOIN: &[u8] = b"join_request.";
+const PREFIX_QUIT: &[u8] = b"quit_request.";
+const PREFIX_ACTION: &[u8] = b"action.";
+const PREFIX_CHAT: &[u8] = b"chat.";
+const PREFIX_PEER: &[u8] = b"peer.";
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
@@ -120,7 +120,7 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Convert entry to known data type
-    pub async fn parse<'a, T: DeserializeOwned>(&self, entry: &'a Entry) -> Result<T> {
+    pub async fn parse<T: DeserializeOwned>(&self, entry: &Entry) -> Result<T> {
         self.iroh()?.get_content_as(entry).await
     }
     /// Set the data into a paused state
@@ -190,7 +190,7 @@ impl GameKey for Entry {
         }
         // The key is "chat.<timestamp>.<id>", so we split and take the last part.
         let key_str = String::from_utf8_lossy(self.key());
-        key_str.split('.').last().map(endpoint_id_from_str)
+        key_str.split('.').next_back().map(endpoint_id_from_str)
     }
     fn is_quit_request(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_QUIT) {

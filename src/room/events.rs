@@ -153,7 +153,7 @@ async fn process_entry<G: GameLogic>(
         let node_id = node_id?;
         // A peer has joined the game room.
         // Get the PeerProfile payload
-        let profile = match data.parse::<PeerProfile>(&entry).await {
+        let profile = match data.parse::<PeerProfile>(entry).await {
             Ok(profile) => profile,
             Err(e) => {
                 return Err(anyhow!("Failed to parse PeerInfo for {}: {e}", &node_id,));
@@ -172,7 +172,7 @@ async fn process_entry<G: GameLogic>(
         // Ensure we have a state to apply the action to
         let current_state = &mut data.get_game_state().await?;
 
-        match data.parse::<G::GameAction>(&entry).await {
+        match data.parse::<G::GameAction>(entry).await {
             Ok(action) => {
                 // Apply the game logic and broadcast the new authoritative state
                 match logic.apply_action(current_state, &node_id, &action) {
@@ -196,7 +196,7 @@ async fn process_entry<G: GameLogic>(
     if let Some(node_id) = entry.is_chat_message() {
         let node_id = node_id?;
         let sender = data.get_peer_name(&node_id).await?;
-        return match data.parse::<ChatMessage>(&entry).await {
+        return match data.parse::<ChatMessage>(entry).await {
             Err(e) => Err(anyhow!("Failed to parse ChatMessage from {sender}: {e}")),
             Ok(msg) => Ok(Some(UiEvent::Chat { sender, msg })),
         };
@@ -208,13 +208,13 @@ async fn process_entry<G: GameLogic>(
         };
     } else if entry.is_game_state_update() {
         // The game state has been updated by the host.
-        return match data.parse::<G::GameState>(&entry).await {
+        return match data.parse::<G::GameState>(entry).await {
             Err(e) => Err(anyhow!("Failed to parse GameState: {e}")),
             Ok(state) => Ok(Some(UiEvent::GameState(state))),
         };
     } else if entry.is_app_state_update() {
         // The app state has been updated by the host.
-        return match data.parse::<AppState>(&entry).await {
+        return match data.parse::<AppState>(entry).await {
             Err(e) => Err(anyhow!("Failed to parse AppState: {e}")),
             Ok(app_state) => Ok(Some(UiEvent::AppState(app_state))),
         };
@@ -271,9 +271,7 @@ impl NetworkEvent {
                 pending_entries.insert(entry.content_hash(), entry);
                 None
             }
-            LiveEvent::ContentReady { hash } => pending_entries
-                .remove(&hash)
-                .map(|entry| Self::Update(entry)),
+            LiveEvent::ContentReady { hash } => pending_entries.remove(&hash).map(Self::Update),
             LiveEvent::NeighborUp(id) => Some(Self::Joiner(id)),
             LiveEvent::NeighborDown(id) => Some(Self::Leaver(id)),
             LiveEvent::SyncFinished(SyncEvent { result, .. }) => match result {
