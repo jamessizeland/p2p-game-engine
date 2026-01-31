@@ -52,25 +52,32 @@ impl<G: GameLogic> StateData<G> {
 
     /// Get list of peers in this Game Room.
     pub async fn get_peer_list(&self) -> Result<PeerMap> {
-        let query = self.doc.get_many(Query::all().key_prefix(PREFIX_PEER));
+        let query = self
+            .doc
+            .get_many(Query::single_latest_per_key().key_prefix(PREFIX_PEER));
         let mut entries = Box::pin(query.await?);
         let mut peers = PeerMap::default();
         while let Some(entry_result) = entries.next().await {
             let entry = entry_result?;
-            let peer_info: PeerInfo = self.iroh()?.get_content_as(&entry).await?;
+            let peer_info: PeerInfo = match self.iroh()?.get_content_as(&entry).await {
+                Ok(info) => info,
+                Err(_) => continue, // TODO is this okay to skip over?
+            };
             let key_str = String::from_utf8_lossy(entry.key());
             let id_str = key_str
                 .strip_prefix(std::str::from_utf8(PREFIX_PEER)?)
                 .expect("Key format should be valid from previous query");
-            let peer_id = EndpointId::from_str(id_str)?;
+            let Ok(peer_id) = EndpointId::from_str(id_str) else {
+                continue;
+            };
             peers.insert(peer_id, peer_info);
         }
         if self.is_host_disconnected() {
             // modify the host's status to indicate that they are offline
-            if let Some(host_id) = self.get_host_id().await.ok() {
-                if let Some(host) = peers.get_mut(&host_id) {
-                    host.status = PeerStatus::Offline;
-                }
+            if let Ok(host_id) = self.get_host_id().await
+                && let Some(host) = peers.get_mut(&host_id)
+            {
+                host.status = PeerStatus::Offline;
             }
         }
         Ok(peers)

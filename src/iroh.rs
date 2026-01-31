@@ -55,8 +55,8 @@ impl Iroh {
         // Bind to Random Port (0) to prevent test collisions
         let endpoint = iroh::Endpoint::builder()
             .secret_key(key)
-            .bind_addr_v4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-            .bind_addr_v6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))
+            .bind_addr(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?
+            .bind_addr(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))?
             .bind()
             .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
@@ -77,8 +77,8 @@ impl Iroh {
         // Bind to default port 11204, or fail if taken (standard app behavior)
         let endpoint = iroh::Endpoint::builder()
             .secret_key(key)
-            .bind_addr_v4(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-            .bind_addr_v6(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))
+            .bind_addr(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?
+            .bind_addr(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))?
             .bind()
             .await?;
         let gossip = Gossip::builder().spawn(endpoint.clone());
@@ -101,9 +101,9 @@ impl Iroh {
     }
 
     /// Get the latest state of the requested entry deserialized
-    pub async fn get_content_as<'a, T: DeserializeOwned>(
+    pub async fn get_content_as<T: DeserializeOwned>(
         &self,
-        entry: &'a iroh_docs::sync::Entry,
+        entry: &iroh_docs::sync::Entry,
     ) -> Result<T> {
         let bytes = self.get_content_bytes(entry).await?;
         Ok(postcard::from_bytes(&bytes)?)

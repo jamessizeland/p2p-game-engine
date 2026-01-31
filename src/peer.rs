@@ -22,10 +22,10 @@ pub struct PeerProfile {
     pub avatar: Option<String>,
 }
 
-impl Into<PeerProfile> for &str {
-    fn into(self) -> PeerProfile {
+impl From<&str> for PeerProfile {
+    fn from(val: &str) -> Self {
         PeerProfile {
-            nickname: self.to_string(),
+            nickname: val.to_string(),
             avatar: None,
         }
     }
@@ -81,7 +81,7 @@ impl Display for PeerMap {
         for (id, peer_info) in self.0.iter() {
             let mut id = id.to_string();
             id.truncate(10);
-            write!(f, "[{}...]: '{}'\n", id, peer_info)?;
+            writeln!(f, "[{id}...]: '{peer_info}'")?;
         }
         Ok(())
     }
