@@ -98,6 +98,17 @@ impl<G: GameLogic> GameRoom<G> {
                                 if state_data.is_host().await.unwrap_or(false) {
                                     // println!("Host is updating status for {id} to Online");
                                     state_data.set_peer_status(&id, PeerStatus::Online).await.ok();
+
+                                    // Trigger GameLogic hook
+                                    if let Ok(mut current_state) = state_data.get_game_state().await {
+                                        let mut players = state_data.get_peer_list().await.unwrap_or_default();
+                                        if players.contains_key(&id) {
+                                            if logic.handle_player_reconnect(&mut players, &id, &mut current_state).is_ok() {
+                                                state_data.set_game_state(&current_state).await.ok();
+                                                // TODO: If logic modified players map, we should persist changes here
+                                            }
+                                        }
+                                    }
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                     // If we are a client, we only care if the peer that joined was the host.
                                     // println!("Client detected host reconnection.");
@@ -113,6 +124,15 @@ impl<G: GameLogic> GameRoom<G> {
                                 if state_data.is_host().await.unwrap_or(false) {
                                     // println!("Host is updating status for {id} to Offline");
                                     state_data.set_peer_status(&id, PeerStatus::Offline).await.ok();
+
+                                    // Trigger GameLogic hook
+                                    if let Ok(mut current_state) = state_data.get_game_state().await {
+                                        let mut players = state_data.get_peer_list().await.unwrap_or_default();
+                                        if logic.handle_player_disconnect(&mut players, &id, &mut current_state).is_ok() {
+                                            state_data.set_game_state(&current_state).await.ok();
+                                            // TODO: If logic modified players map, we should persist changes here
+                                        }
+                                    }
                                 } else if state_data.is_peer_host(&id).await.unwrap_or(false) {
                                         // If we are a client, we only care if the peer that dropped was the host.
                                         println!("Client detected host disconnection.");
