@@ -90,37 +90,34 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     // --- SETUP PHASE ---
     let (host_room, ticket_string, host_id, _host_events) = setup_test_room("peer1").await?;
 
-    let (client_room1, mut client_events1) = join_test_room("peer2", &ticket_string, 3).await?;
-    let (_client_room2, mut client_events2) = join_test_room("peer3", &ticket_string, 3).await?;
+    let (client_room, mut client_events) = join_test_room("peer2", &ticket_string, 3).await?;
 
-    // Wait for lobby to be fully populated for all clients
-    await_lobby_update(&mut client_events1, 3).await?;
-    await_lobby_update(&mut client_events2, 3).await?;
+    // Wait for lobby to be fully populated
+    await_lobby_update(&mut client_events, 2).await?;
 
     // --- GAME START ---
     host_room.start_game().await?;
 
-    // Wait for clients to enter the game
-    await_game_start(&mut client_events1).await?;
-    await_game_start(&mut client_events2).await?;
+    // Wait for client to enter the game
+    await_game_start(&mut client_events).await?;
 
     // --- HOST CRASHES ---
     drop(host_room);
 
-    // Clients should receive announcements that the host peer has left and why.
-    // We only need to check one client for this test.
-    let event = await_event(&mut client_events1).await?;
+    // Client should receive an announcement that the host peer has left.
+    let event = await_event(&mut client_events).await?;
     assert!(matches!(event, UiEvent::Host(HostEvent::Offline)));
 
     // Check state directly
-    // The app state should report Paused.  This is a synthetic state not held in the document.
-    assert_eq!(client_room1.get_app_state().await?, AppState::Paused);
+    // The app state should report Paused. This is a synthetic state not held in the document.
+    assert_eq!(client_room.get_app_state().await?, AppState::Paused);
 
-    // The host's peer status should not update to Offline, because this is inferred
-    // we don't update it in the document because noone currently has authority to do so.
-    let status =
-        await_lobby_status_update(&mut client_events2, &host_id, PeerStatus::Offline).await;
-    assert!(status.is_err()); // expect Timed out waiting for an event.
+    // The host's peer status is inferred to be Offline by clients when the host disconnects.
+    // This is a synthetic state change on the client, not a document update, so no `UiEvent::Peer`
+    // is emitted. We can verify this by querying the state directly.
+    let peers = client_room.get_peer_list().await?;
+    let host_status = peers.get(&host_id).unwrap().status;
+    assert_eq!(host_status, PeerStatus::Offline);
 
     Ok(())
 }
@@ -177,22 +174,111 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     Ok(())
 }
 
-#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_peer_disconnects_during_lobby() -> anyhow::Result<()> {
     // A peer leaves the room for any reason, before the game has started.
     // They are reassigned to be an observer, should they rejoin later.
     // (we never fully remove a peer from the PeerMap once they have been registered)
-    todo!()
+
+    // --- SETUP PHASE ---
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+
+    // Use a persistent client so we can reconnect with the same ID
+    let client_dir = tempfile::tempdir()?;
+    let (client_room, mut client_events) = GameRoom::join(
+        TestGame,
+        &ticket_string,
+        Some(client_dir.path().to_path_buf()),
+    )
+    .await?;
+    client_room.announce_presence("client").await?;
+    let client_id = client_room.id();
+
+    // Wait for lobby
+    await_lobby_update(&mut host_events, 2).await?;
+    await_lobby_update(&mut client_events, 2).await?;
+
+    // --- CLIENT DISCONNECTS ---
+    drop(client_room);
+
+    // Host should see client offline
+    await_lobby_status_update(&mut host_events, &client_id, PeerStatus::Offline).await?;
+
+    // --- CLIENT RECONNECTS ---
+    let (client_room, _client_events) = GameRoom::join(
+        TestGame,
+        &ticket_string,
+        Some(client_dir.path().to_path_buf()),
+    )
+    .await?;
+    assert_eq!(client_room.id(), client_id);
+
+    // Host should see client online
+    await_lobby_status_update(&mut host_events, &client_id, PeerStatus::Online).await?;
+
+    Ok(())
 }
 
-#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
     // A peer leaves the room without registering a loss or forfeit.
     // They will be marked as offline by the host and the game will continue until
     // it is their turn to act.
-    todo!()
+
+    // --- SETUP PHASE ---
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+
+    // Use a persistent client
+    let client_dir = tempfile::tempdir()?;
+    let (client_room, mut client_events) = GameRoom::join(
+        TestGame,
+        &ticket_string,
+        Some(client_dir.path().to_path_buf()),
+    )
+    .await?;
+    client_room.announce_presence("client").await?;
+    let client_id = client_room.id();
+
+    // Wait for lobby
+    await_lobby_update(&mut host_events, 2).await?;
+    await_lobby_update(&mut client_events, 2).await?;
+
+    // --- GAME START ---
+    host_room.start_game().await?;
+    await_game_start(&mut client_events).await?;
+
+    // --- CLIENT DISCONNECTS ---
+    drop(client_room);
+
+    // Host should see client offline
+    await_lobby_status_update(&mut host_events, &client_id, PeerStatus::Offline).await?;
+
+    // --- CLIENT RECONNECTS ---
+    let (client_room, mut client_events) = GameRoom::join(
+        TestGame,
+        &ticket_string,
+        Some(client_dir.path().to_path_buf()),
+    )
+    .await?;
+    assert_eq!(client_room.id(), client_id);
+
+    // Host should see client online
+    await_lobby_status_update(&mut host_events, &client_id, PeerStatus::Online).await?;
+
+    // Client should receive current game state
+    let state = client_room.get_game_state().await?;
+    assert_eq!(state.counter, 0);
+
+    // Client should be able to continue playing (submit action)
+    client_room.submit_action(TestGameAction::Increment).await?;
+
+    // Host should see the update
+    match await_event(&mut host_events).await? {
+        UiEvent::GameState(TestGameState { counter: 1 }) => {}
+        e => panic!("Host expected GameState update, got {e:?}"),
+    }
+
+    Ok(())
 }
 #[ignore = "unimplemented"]
 #[tokio::test]

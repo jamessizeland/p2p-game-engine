@@ -6,6 +6,7 @@ use std::{
 use anyhow::Result;
 use bytes::Bytes;
 use iroh::SecretKey;
+use iroh::endpoint::presets;
 use iroh::protocol::Router;
 use iroh_blobs::{
     ALPN as BLOBS_ALPN, BlobsProtocol,
@@ -53,7 +54,7 @@ impl Iroh {
         let key = load_secret_key(None).await?; // Generate random key
 
         // Bind to Random Port (0) to prevent test collisions
-        let endpoint = iroh::Endpoint::builder()
+        let endpoint = iroh::Endpoint::builder(presets::N0)
             .secret_key(key)
             .bind_addr(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?
             .bind_addr(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))?
@@ -75,7 +76,7 @@ impl Iroh {
         let key = load_secret_key(Some(path.clone().join("keypair"))).await?;
 
         // Bind to default port 11204, or fail if taken (standard app behavior)
-        let endpoint = iroh::Endpoint::builder()
+        let endpoint = iroh::Endpoint::builder(presets::N0)
             .secret_key(key)
             .bind_addr(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?
             .bind_addr(SocketAddrV6::new(Ipv6Addr::UNSPECIFIED, 0, 0, 0))?
@@ -134,14 +135,14 @@ impl Iroh {
 /// Helper to load key from disk OR generate if path is None
 async fn load_secret_key(key_path: Option<PathBuf>) -> Result<SecretKey> {
     let Some(key_path) = key_path else {
-        return Ok(SecretKey::generate(&mut rand::rng()));
+        return Ok(SecretKey::generate());
     };
     if key_path.exists() {
         let key_bytes = tokio::fs::read(key_path).await?;
         return Ok(SecretKey::try_from(&key_bytes[0..32])?);
     }
 
-    let secret_key = SecretKey::generate(&mut rand::rng());
+    let secret_key = SecretKey::generate();
     // Try to canonicalize if possible
     let key_path = key_path.canonicalize().unwrap_or(key_path);
     let key_path_parent = key_path
