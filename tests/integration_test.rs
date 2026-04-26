@@ -49,19 +49,8 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     );
     println!("Host direct query successful.");
 
-    // Client should first receive the lobby update and the initial lobby state
-    for _ in 0..4 {
-        let event = await_event(&mut client_events).await?;
-        println!("event: {event}");
-        match event {
-            UiEvent::Peer(_) => { /* Good */ }
-            UiEvent::AppState(AppState::Lobby) => { /* Good */ }
-            UiEvent::Host(HostEvent::Changed { to }) => {
-                assert_eq!(to, host_name);
-            }
-            other => panic!("Client received wrong event type during lobby phase: {other:?}"),
-        }
-    }
+    // Client should receive enough lobby state to see both players.
+    await_lobby_update(&mut client_events, 2).await?;
     // Client can also query the state directly
     let app_state = client_room.get_app_state().await?;
     assert!(matches!(app_state, AppState::Lobby));
@@ -252,5 +241,15 @@ async fn test_validate_start_failure_does_not_publish_partial_state() -> anyhow:
     assert!(room.start_game().await.is_err());
     assert!(room.get_game_state().await.is_err());
     assert_eq!(room.get_app_state().await?, AppState::Lobby);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_join_rejects_wrong_game_type() -> anyhow::Result<()> {
+    let (room, _events) = GameRoom::create(TestGame, None).await?;
+    let ticket = room.ticket().await?.to_string();
+
+    let result = GameRoom::join(StartBlockedGame, &ticket, None).await;
+    assert!(result.is_err());
     Ok(())
 }

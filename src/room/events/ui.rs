@@ -3,6 +3,27 @@ use std::fmt::Display;
 use crate::{ActionResult, AppState, ChatMessage, GameLogic, HostEvent, PeerMap};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiError {
+    SyncFailed(String),
+    EventProcessing {
+        key: String,
+        author: String,
+        message: String,
+    },
+}
+
+impl Display for UiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UiError::SyncFailed(reason) => write!(f, "Sync failed: {reason}"),
+            UiError::EventProcessing { key, message, .. } => {
+                write!(f, "Failed to process event '{key}': {message}")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiEvent<G: GameLogic> {
     Peer(PeerMap),
     GameState(G::GameState),
@@ -10,7 +31,7 @@ pub enum UiEvent<G: GameLogic> {
     Chat { sender: String, msg: ChatMessage },
     ActionResult(ActionResult),
     Host(HostEvent),
-    Error(String), // TODO replace with AppError including G::GameError
+    Error(UiError),
 }
 
 impl<G: GameLogic> Display for UiEvent<G> {
@@ -24,7 +45,7 @@ impl<G: GameLogic> Display for UiEvent<G> {
             UiEvent::Host(HostEvent::Changed { to }) => write!(f, "HostSet({to})"),
             UiEvent::Host(HostEvent::Offline) => write!(f, "HostOffline"),
             UiEvent::Host(HostEvent::Online) => write!(f, "HostOnline"),
-            UiEvent::Error(msg) => write!(f, "Error({msg})"),
+            UiEvent::Error(error) => write!(f, "Error({error:?})"),
         }
     }
 }

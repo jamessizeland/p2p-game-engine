@@ -1,3 +1,12 @@
+//! Iroh Node Interface
+//!
+//! This module contains the `Iroh` struct, which is the main interface for interacting with the Iroh network,
+//! including creating a node, connecting to other nodes, and accessing the Blobs and Docs protocols.
+//! It also contains a helper function for loading or generating a secret key for the node.
+//! The `Iroh` struct provides a high-level API for interacting with the Iroh network, abstracting away the
+//! details of the underlying protocols and allowing the rest of the application to focus on game logic and
+//! state management.
+
 use std::{
     net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, SocketAddrV6},
     path::PathBuf,
@@ -17,6 +26,11 @@ use iroh_docs::{ALPN as DOCS_ALPN, protocol::Docs};
 use iroh_gossip::{ALPN as GOSSIP_ALPN, net::Gossip};
 use serde::de::DeserializeOwned;
 
+/// The main interface for interacting with the Iroh network, including creating a node,
+/// connecting to other nodes, and accessing the Blobs and Docs protocols.
+/// The `Iroh` struct provides a high-level API for interacting with the Iroh network,
+/// abstracting away the details of the underlying protocols and allowing the rest of the
+/// application to focus on game logic and state management.
 #[derive(Clone, Debug)]
 pub struct Iroh {
     router: Router,

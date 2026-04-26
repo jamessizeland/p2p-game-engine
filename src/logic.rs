@@ -1,15 +1,27 @@
-#![allow(dead_code)]
+//! Game Logic
+//!
+//! This module contains the `GameLogic` trait, which defines the core logic of a turn-based game,
+//! including how to apply actions, assign roles, and handle player disconnects and reconnects.
+//! It also defines the `ConnectionEffect` enum, which indicates how the game state should be updated
+//! in response to player connections and disconnections.
+
 use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, error::Error, fmt::Debug};
 
 use crate::PeerMap;
 
+/// The effect of a player connection or disconnection on the game state,
+/// indicating whether the state or peer list has changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionEffect {
+    /// No change to the game state or peer list is necessary.
     NoChange,
+    /// The game state has changed and needs to be updated for all players.
     StateChanged,
+    /// The peer list has changed and needs to be updated for all players.
     PeersChanged,
+    /// Both the game state and peer list have changed and need to be updated for all players.
     StateAndPeersChanged,
 }
 
