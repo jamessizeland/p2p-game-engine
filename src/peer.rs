@@ -22,6 +22,13 @@ pub enum PeerStatus {
     Offline,
 }
 
+impl PeerStatus {
+    /// Check if the peer is currently online.
+    pub fn is_online(&self) -> bool {
+        matches!(self, PeerStatus::Online)
+    }
+}
+
 /// Personalisation Information about this peer
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PeerProfile {

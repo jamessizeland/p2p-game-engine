@@ -85,6 +85,13 @@ impl<G: GameLogic> GameRoom<G> {
         }
 
         let players: PeerMap = self.get_peer_list().await?;
+        if let Some(peer) = players
+            .values()
+            .find(|peer| peer.status.is_online() && !peer.ready)
+        {
+            return Err(anyhow::anyhow!("Peer {peer} is not ready"));
+        }
+
         let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players)?;
         self.logic.validate_start(&players, &roles)?;
         let initial_state: G::GameState = self.logic.initial_state(&players, &roles)?;
@@ -143,6 +150,11 @@ impl<G: GameLogic> GameRoom<G> {
         self.state.is_host().await
     }
 
+    /// Claim hosting authority for this room if there is no other online host.
+    pub async fn claim_host(&self) -> Result<()> {
+        self.state.claim_host().await
+    }
+
     /// Get the current application lifecycle state.
     pub async fn get_app_state(&self) -> Result<AppState> {
         self.state.get_app_state().await
@@ -164,6 +176,11 @@ impl<G: GameLogic> GameRoom<G> {
         introduction: impl Into<crate::PeerProfile>,
     ) -> Result<()> {
         self.state.announce_presence(introduction).await
+    }
+
+    /// Update this peer's lobby readiness.
+    pub async fn set_ready(&self, ready: bool) -> Result<()> {
+        self.state.set_peer_ready(&self.id(), ready).await
     }
 
     /// Send a chat message to room participants.

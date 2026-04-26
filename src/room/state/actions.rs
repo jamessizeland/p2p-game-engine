@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
 use crate::{ChatMessage, GameLogic, PeerInfo, PeerMap, PeerProfile, PeerStatus};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use tokio::time::sleep;
 
 /// A request from a peer to perform an action, containing the action and a unique ID for this request.
@@ -61,7 +61,16 @@ impl<G: GameLogic> StateData<G> {
 
     /// Declare that this endpoint now has hosting authority.
     pub async fn claim_host(&self) -> Result<()> {
-        // TODO improve logic here, we need to check if another online peer already has hosting authority.
+        if let Ok(host_id) = self.get_host_id().await
+            && host_id != self.endpoint_id
+            && !self.is_host_disconnected()
+            && self
+                .get_peer_info(&host_id)
+                .await?
+                .is_some_and(|peer| peer.status.is_online())
+        {
+            return Err(anyhow!("Cannot claim host while current host is online"));
+        }
         self.set_host(&self.endpoint_id).await
     }
 
@@ -111,6 +120,16 @@ impl<G: GameLogic> StateData<G> {
             self.update_peer(peer_id, peer_info).await?;
         }
         Ok(())
+    }
+
+    /// Set a peer's lobby readiness, if they are in the peer list.
+    pub async fn set_peer_ready(&self, peer_id: &EndpointId, ready: bool) -> Result<()> {
+        if let Some(mut peer_info) = self.get_peer_info(peer_id).await? {
+            peer_info.ready = ready;
+            self.update_peer(peer_id, peer_info).await?;
+            return Ok(());
+        }
+        Err(anyhow!("Cannot set readiness before peer has joined"))
     }
 
     /// Set a peer's observer flag if they are in the peer list.

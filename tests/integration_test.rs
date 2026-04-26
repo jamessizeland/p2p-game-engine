@@ -12,34 +12,19 @@ use thiserror::Error;
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // --- SETUP PHASE ---
     let host_name = "HostPlayer";
-    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room(host_name).await?;
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room(host_name).await?;
 
     let client_name = "ClientPlayer";
     let (client_room, mut client_events) = join_test_room(client_name, &ticket_string, 3).await?;
 
     // --- LOBBY PHASE ---
-    // Host should receive the lobby update
-    println!("Waiting for Host Lobby Update...");
-    let event = await_event(&mut host_events).await?;
-    println!("Received Host Lobby Update: {event}");
     let client_id = client_room.id();
-    match event {
-        UiEvent::Peer(players) => {
-            assert_eq!(players.len(), 2);
-            assert!(players.contains_key(&client_id));
-            assert!(players.contains_key(&host_id));
-            assert_eq!(
-                players.get(&client_id).unwrap().profile.nickname,
-                client_name
-            );
-        }
-        _ => panic!("Host received wrong event type"),
-    }
+    await_lobby_update(&mut host_events, 2).await?;
 
     println!("Getting player map from host room...");
 
     // Host can also query the state directly
-    let players = host_room.get_peer_list().await?;
+    let players = await_peer_list_count(&host_room, 2).await?;
     println!("Players: {players}");
     assert_eq!(players.len(), 2);
     assert!(players.contains_key(&client_id));
@@ -90,8 +75,9 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_two_rapid_actions_from_same_peer_are_not_overwritten() -> anyhow::Result<()> {
-    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("host").await?;
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     host_room.start_game().await?;
@@ -106,8 +92,9 @@ async fn test_two_rapid_actions_from_same_peer_are_not_overwritten() -> anyhow::
 
 #[tokio::test]
 async fn test_invalid_action_returns_action_result() -> anyhow::Result<()> {
-    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("host").await?;
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     host_room.start_game().await?;
@@ -122,10 +109,12 @@ async fn test_invalid_action_returns_action_result() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_processed_actions_are_not_replayed_after_host_reconnect() -> anyhow::Result<()> {
-    let host_dir = tempfile::tempdir()?.path().to_path_buf();
-    let (host_room, ticket_string, host_id, _host_events) =
+    let host_temp = tempfile::tempdir()?;
+    let host_dir = host_temp.path().to_path_buf();
+    let (host_room, ticket_string, host_id, mut host_events) =
         setup_persistent_test_room("host", host_dir.clone()).await?;
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     host_room.start_game().await?;
@@ -144,6 +133,48 @@ async fn test_processed_actions_are_not_replayed_after_host_reconnect() -> anyho
 
     client_room.submit_action(TestGameAction::Increment).await?;
     await_counter_state(&mut client_events, 2).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_start_game_waits_for_lobby_readiness() -> anyhow::Result<()> {
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+
+    let (client_room, mut client_events) = GameRoom::join(TestGame, &ticket_string, None).await?;
+    client_room.announce_presence("client").await?;
+    let client_id = client_room.id();
+
+    await_lobby_contains(&mut client_events, &client_id).await?;
+    await_lobby_update(&mut host_events, 2).await?;
+
+    let result = host_room.start_game().await;
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Peer client is not ready")
+    );
+    assert_eq!(host_room.get_app_state().await?, AppState::Lobby);
+
+    client_room.set_ready(true).await?;
+    await_lobby_ready_update(&mut host_events, &client_id, true).await?;
+
+    host_room.start_game().await?;
+    await_game_start(&mut client_events).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_online_host_claim_is_rejected() -> anyhow::Result<()> {
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+    let (client_room, _client_events) = join_test_room("client", &ticket_string, 3).await?;
+    await_lobby_update(&mut host_events, 2).await?;
+
+    let result = client_room.claim_host().await;
+    assert!(result.is_err());
+    assert!(host_room.is_host().await?);
+    assert!(!client_room.is_host().await?);
     Ok(())
 }
 

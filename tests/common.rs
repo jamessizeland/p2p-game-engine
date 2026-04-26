@@ -142,6 +142,7 @@ pub async fn setup_test_room(
         }
         _ => panic!("Host received wrong event type"),
     }
+    host_room.set_ready(true).await?;
     Ok((host_room, ticket_string, host_id, host_events))
 }
 
@@ -171,6 +172,7 @@ pub async fn setup_persistent_test_room(
         }
         _ => panic!("Host received wrong event type"),
     }
+    host_room.set_ready(true).await?;
     Ok((host_room, ticket_string, host_id, host_events))
 }
 
@@ -181,7 +183,7 @@ pub async fn join_test_room(
 ) -> anyhow::Result<(GameRoom<TestGame>, mpsc::Receiver<UiEvent<TestGame>>)> {
     println!("Setting up Client Room");
     // Sometimes this fails, so we have a retry mechanic.
-    let (client_room, client_events) = loop {
+    let (client_room, mut client_events) = loop {
         sleep(Duration::from_secs(1)).await;
         match GameRoom::join(TestGame, &ticket_string, None).await {
             Ok((room, events)) => break (room, events),
@@ -195,7 +197,23 @@ pub async fn join_test_room(
         }
     };
     client_room.announce_presence(name).await?;
+    await_lobby_contains(&mut client_events, &client_room.id()).await?;
+    client_room.set_ready(true).await?;
     Ok((client_room, client_events))
+}
+
+pub async fn await_lobby_contains(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    player_id: &EndpointId,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::Peer(players) = event
+            && players.contains_key(player_id)
+        {
+            return Ok(());
+        }
+    }
 }
 
 /// Wait until we have the expected number of players in the lobby
@@ -211,6 +229,23 @@ pub async fn await_lobby_update(
             }
         }
     }
+}
+
+pub async fn await_peer_list_count(
+    room: &GameRoom<TestGame>,
+    expected_players: usize,
+) -> anyhow::Result<PeerMap> {
+    let duration = Duration::from_secs(30);
+    tokio::time::timeout(duration, async {
+        loop {
+            let players = room.get_peer_list().await?;
+            if players.len() == expected_players {
+                return Ok(players);
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
 }
 
 /// When a game starts we see two events (in non-deterministic order)
@@ -305,6 +340,22 @@ pub async fn await_lobby_observer_update(
         if let UiEvent::Peer(players) = event
             && let Some(player) = players.get(player_id)
             && player.is_observer == expected_observer
+        {
+            return Ok(());
+        }
+    }
+}
+
+pub async fn await_lobby_ready_update(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    player_id: &EndpointId,
+    expected_ready: bool,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::Peer(players) = event
+            && let Some(player) = players.get(player_id)
+            && player.ready == expected_ready
         {
             return Ok(());
         }
