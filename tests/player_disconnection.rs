@@ -122,6 +122,11 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     // Check state directly
     // The app state should report Paused. This is a synthetic state not held in the document.
     assert_eq!(client_room.get_app_state().await?, AppState::Paused);
+    let result = client_room.submit_action(TestGameAction::Increment).await;
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Cannot submit action while paused"
+    );
 
     // The host's peer status is inferred to be Offline by clients when the host disconnects.
     // This is a synthetic state change on the client, not a document update, so no `UiEvent::Peer`
@@ -323,9 +328,8 @@ async fn test_client_peer_forfeits() -> anyhow::Result<()> {
     client_room.forfeit().await?;
     await_lobby_observer_update(&mut host_events, &client_id, true).await?;
 
-    client_room.submit_action(TestGameAction::Increment).await?;
-    let result = await_action_result(&mut client_events, false).await?;
-    assert_eq!(result.error.as_deref(), Some("Peer is an observer"));
+    let result = client_room.submit_action(TestGameAction::Increment).await;
+    assert_eq!(result.unwrap_err().to_string(), "Peer is an observer");
 
     Ok(())
 }

@@ -193,7 +193,30 @@ impl<G: GameLogic> GameRoom<G> {
     }
 
     /// Submit a game action for the host to validate and apply.
+    ///
+    /// This performs local lifecycle checks before publishing the request so UI
+    /// callers get immediate feedback for obviously invalid states. The host
+    /// still performs authoritative validation when the request is processed.
     pub async fn submit_action(&self, action: G::GameAction) -> Result<()> {
+        match self.get_app_state().await? {
+            AppState::InGame => {}
+            AppState::Lobby => return Err(anyhow::anyhow!("Cannot submit action from lobby")),
+            AppState::Paused => return Err(anyhow::anyhow!("Cannot submit action while paused")),
+            AppState::Finished => {
+                return Err(anyhow::anyhow!(
+                    "Cannot submit action after game has finished"
+                ));
+            }
+        }
+
+        match self.state.get_peer_info(&self.id()).await? {
+            Some(peer) if peer.is_observer => {
+                return Err(anyhow::anyhow!("Peer is an observer"));
+            }
+            Some(_) => {}
+            None => return Err(anyhow::anyhow!("Peer has not joined the room")),
+        }
+
         self.state.submit_action(action).await
     }
 
