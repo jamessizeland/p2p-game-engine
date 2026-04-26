@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 mod iroh;
 mod logic;
 mod peer;

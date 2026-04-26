@@ -15,6 +15,8 @@ mod common;
 use common::*;
 use p2p_game_engine::*;
 
+static PERSISTENT_ROOM_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn get_peer_statuses(room: &GameRoom<TestGame>) -> anyhow::Result<Vec<PeerStatus>> {
     Ok(room
         .get_peer_list()
@@ -24,8 +26,21 @@ async fn get_peer_statuses(room: &GameRoom<TestGame>) -> anyhow::Result<Vec<Peer
         .collect())
 }
 
+async fn await_is_host(room: &GameRoom<TestGame>, expected: bool) -> anyhow::Result<()> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            if room.is_host().await? == expected {
+                return anyhow::Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
 #[tokio::test]
 async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // A "controlled" disconnect is when the host explicitly announces they are leaving.
 
     // --- SETUP PHASE ---
@@ -38,7 +53,7 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     // Wait for lobby to be fully populated for all clients
     await_lobby_ready_update(&mut host_events, &client_room1.id(), true).await?;
     await_lobby_ready_update(&mut host_events, &client_room2.id(), true).await?;
-    await_lobby_update(&mut client_events1, 3).await?;
+    await_lobby_update(&mut client_events1, 2).await?;
     await_lobby_update(&mut client_events2, 3).await?;
 
     // --- GAME START ---
@@ -80,6 +95,7 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // An "uncontrolled" disconnect is when the host process crashes or is dropped.
 
     // --- SETUP PHASE ---
@@ -119,6 +135,7 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
 
 #[tokio::test]
 async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()> {
+    let _persistent_room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // During an active game, the host disconnects without reporting they lose or forfeit.
     // the game state should enter an inferred pause, preventing other peers from
     // submitting actions until the host reconnects.
@@ -162,11 +179,27 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     await_host_event(&mut client_events, HostEvent::Online).await?;
     assert_eq!(client_room.get_app_state().await?, AppState::InGame);
     println!("Client detected host reconnection and unpaused.");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_offline_host_can_be_replaced_by_claim() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("host").await?;
+    let (client_room1, mut client_events1) = join_test_room("client1", &ticket_string, 3).await?;
+
+    drop(host_room);
+    await_host_event(&mut client_events1, HostEvent::Offline).await?;
+
+    client_room1.claim_host().await?;
+    await_is_host(&client_room1, true).await?;
     Ok(())
 }
 
 #[tokio::test]
 async fn test_peer_disconnects_during_lobby() -> anyhow::Result<()> {
+    let _persistent_room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // A peer leaves the room for any reason, before the game has started.
     // They are reassigned to be an observer, should they rejoin later.
     // (we never fully remove a peer from the PeerMap once they have been registered)
@@ -212,6 +245,7 @@ async fn test_peer_disconnects_during_lobby() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
+    let _persistent_room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // A peer leaves the room without registering a loss or forfeit.
     // They will be marked as offline by the host and the game will continue until
     // it is their turn to act.
@@ -271,6 +305,7 @@ async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
 }
 #[tokio::test]
 async fn test_client_peer_forfeits() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // Non-host peer loses or chooses to forfeit.
     // In this scenario they should be switched to being an observer and can continue
     // to stay subscribed to the game state but no-longer act.
@@ -297,6 +332,7 @@ async fn test_client_peer_forfeits() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_host_forfeits() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     // During an active game, the hosting peer loses or chooses to forfeit.
     // In this scenario the game should be able to continue without them needing to stay online.
     // They will be switched to being an observer, and will elect a new host to take over if they

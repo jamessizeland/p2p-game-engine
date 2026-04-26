@@ -238,7 +238,7 @@ async fn elect_next_host<G: GameLogic>(
     logic: &Arc<G>,
     old_host: &iroh::EndpointId,
 ) -> Result<()> {
-    if let Some(new_host) = data.next_host_candidate(logic, old_host).await? {
+    if let Some(new_host) = data.next_host_candidate(logic, Some(old_host)).await? {
         data.set_host(&new_host).await?;
     }
     Ok(())

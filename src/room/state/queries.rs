@@ -186,12 +186,14 @@ impl<G: GameLogic> StateData<G> {
     pub(crate) async fn next_host_candidate(
         &self,
         logic: &G,
-        excluding: &EndpointId,
+        excluding: Option<&EndpointId>,
     ) -> Result<Option<EndpointId>> {
         let peers = self.get_peer_list().await?;
         let mut candidates: Vec<_> = peers
             .iter()
-            .filter(|(id, peer)| *id != excluding && logic.can_host(peer))
+            .filter(|(id, peer)| {
+                excluding.is_none_or(|excluded| *id != excluded) && logic.can_host(peer)
+            })
             .map(|(id, _)| *id)
             .collect();
         candidates.sort();

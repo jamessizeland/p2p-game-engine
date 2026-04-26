@@ -124,7 +124,7 @@ impl<G: GameLogic> GameRoom<G> {
             .set_room_metadata(&state::RoomMetadata::for_game::<G>())
             .await?;
         state.set_app_state(&AppState::Lobby).await?;
-        state.claim_host().await?;
+        state.set_host(&state.endpoint_id).await?;
 
         let mut room = Self::new(state, logic);
         let (event_inbox, event_handle) = room.start_event_loop().await?;
@@ -156,7 +156,7 @@ impl<G: GameLogic> GameRoom<G> {
 
     /// Claim hosting authority for this room if there is no other online host.
     pub async fn claim_host(&self) -> Result<()> {
-        self.state.claim_host().await
+        self.state.claim_host(&self.logic).await
     }
 
     /// Get the current application lifecycle state.
