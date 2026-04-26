@@ -69,10 +69,8 @@ async fn event_loop<G: GameLogic>(
                     NetworkEvent::SyncFailed(reason) => Some(UiEvent::Error(UiError::SyncFailed(reason))),
                     NetworkEvent::SyncSucceeded => None, /* Do nothing for now */
                 };
-                if let Some(ui_event) = maybe_event {
-                    if sender.send(ui_event).await.is_err() {
-                        break; // Receiver dropped, exit loop
-                    }
+                if let Some(ui_event) = maybe_event && sender.send(ui_event).await.is_err() {
+                    break; // Receiver dropped, exit loop
                 }
             },
             else => break, // Stream finished
