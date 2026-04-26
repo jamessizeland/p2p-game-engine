@@ -1,7 +1,13 @@
 //! Game Room
 
 mod chat;
-mod events;
+mod events {
+    mod event_loop;
+    mod network;
+    mod process;
+    mod ui;
+    pub use {event_loop::HostEvent, ui::UiEvent};
+}
 mod state;
 
 use crate::{GameLogic, PeerMap};
