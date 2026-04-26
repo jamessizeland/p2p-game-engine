@@ -10,7 +10,7 @@
 
 use super::{HostEvent, ui::UiEvent};
 use crate::{
-    AppState, ConnectionEffect, GameLogic, PeerMap, PeerProfile, PeerStatus,
+    AppState, ConnectionEffect, GameLogic, PeerMap, PeerProfile, PeerStatus, UiError,
     room::{chat::ChatMessage, state::*},
 };
 
@@ -161,16 +161,16 @@ pub async fn process_entry<G: GameLogic>(
         // If we are processing our own quit request, do nothing.
         // Let other peers handle it.
         if node_id == data.endpoint_id {
-            if matches!(reason, LeaveReason::Forfeit) && data.is_host().await.unwrap_or(false) {
+            if matches!(reason, LeaveReason::Forfeit) && data.is_host().await.unwrap_or_default() {
                 process_forfeit(data, logic, &node_id).await?;
                 if let Some(new_host) = data.next_host_candidate(&node_id).await? {
                     data.set_host(&new_host).await?;
                 }
             }
             return Ok(None);
-        } else if data.is_peer_host(&node_id).await.unwrap_or(false) {
+        } else if data.is_peer_host(&node_id).await.unwrap_or_default() {
             if matches!(reason, LeaveReason::Forfeit) {
-                if data.is_host().await.unwrap_or(false) {
+                if data.is_host().await.unwrap_or_default() {
                     process_forfeit(data, logic, &node_id).await?;
                     if let Some(new_host) = data.next_host_candidate(&node_id).await? {
                         data.set_host(&new_host).await?;
@@ -180,7 +180,7 @@ pub async fn process_entry<G: GameLogic>(
             }
             data.host_offline();
             return Ok(Some(UiEvent::Host(HostEvent::Offline)));
-        } else if data.is_host().await.unwrap_or(false) {
+        } else if data.is_host().await.unwrap_or_default() {
             if matches!(reason, LeaveReason::Forfeit) {
                 process_forfeit(data, logic, &node_id).await?;
             } else {
@@ -192,6 +192,93 @@ pub async fn process_entry<G: GameLogic>(
     }
     // println!("unknown event: {entry:?}");
     Ok(None)
+}
+
+/// Process an update event from the iroh doc.
+pub(super) async fn process_update<G: GameLogic>(
+    entry: &Entry,
+    state_data: &Arc<StateData<G>>,
+    logic: &Arc<G>,
+) -> Option<UiEvent<G>> {
+    match process_entry(&entry, &state_data, &logic).await {
+        Ok(maybe_event) => maybe_event,
+        Err(e) => {
+            let error_event = UiEvent::Error(UiError::EventProcessing {
+                key: String::from_utf8_lossy(entry.key()).to_string(),
+                author: entry.author().to_string(),
+                message: e.to_string(),
+            });
+            Some(error_event)
+        }
+    }
+}
+
+/// Process a peer join event from the iroh doc.
+pub(super) async fn process_joiner<G: GameLogic>(
+    id: iroh::PublicKey,
+    state_data: &Arc<StateData<G>>,
+    logic: &Arc<G>,
+) -> Option<UiEvent<G>> {
+    // A peer has connected, if we are the host we can set its status to online
+    // if they are in our peer list already
+    if state_data.is_host().await.unwrap_or_default() {
+        state_data
+            .set_peer_status(&id, PeerStatus::Online)
+            .await
+            .ok();
+
+        // Trigger GameLogic hook
+        if let Ok(mut current_state) = state_data.get_game_state().await {
+            let mut players = state_data.get_peer_list().await.unwrap_or_default();
+            if players.contains_key(&id) {
+                if let Ok(effect) =
+                    logic.handle_player_reconnect(&mut players, &id, &mut current_state)
+                {
+                    persist_connection_effect(&state_data, &players, &current_state, effect)
+                        .await
+                        .ok();
+                }
+            }
+        }
+    } else if state_data.is_peer_host(&id).await.unwrap_or_default() {
+        // If we are a client, we only care if the peer that joined was the host.
+        state_data.host_online();
+        return Some(UiEvent::Host(HostEvent::Online));
+    }
+    None
+}
+
+/// Process a peer leave event from the iroh doc.
+pub(super) async fn process_leaver<G: GameLogic>(
+    id: iroh::PublicKey,
+    state_data: &Arc<StateData<G>>,
+    logic: &Arc<G>,
+) -> Option<UiEvent<G>> {
+    // A peer has disconnected from us.
+    // If we are the host, we are responsible for updating the peer's status.
+    if state_data.is_host().await.unwrap_or_default() {
+        state_data
+            .set_peer_status(&id, PeerStatus::Offline)
+            .await
+            .ok();
+
+        // Trigger GameLogic hook
+        if let Ok(mut current_state) = state_data.get_game_state().await {
+            let mut players = state_data.get_peer_list().await.unwrap_or_default();
+            if let Ok(effect) =
+                logic.handle_player_disconnect(&mut players, &id, &mut current_state)
+            {
+                persist_connection_effect(&state_data, &players, &current_state, effect)
+                    .await
+                    .ok();
+            }
+        }
+    } else if state_data.is_peer_host(&id).await.unwrap_or_default() {
+        // If we are a client, we only care if the peer that dropped was the host.
+        state_data.host_offline();
+        return Some(UiEvent::Host(HostEvent::Offline));
+    }
+    None
 }
 
 /// Apply standard forfeit behavior and game-specific forfeit hooks.
