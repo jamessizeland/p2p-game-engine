@@ -9,6 +9,9 @@
 
 mod chat;
 mod events {
+    mod actions;
+    mod connections;
+    mod entries;
     mod event_loop;
     mod network;
     mod process;
