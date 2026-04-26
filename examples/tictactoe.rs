@@ -127,6 +127,10 @@ impl GameLogic for TicTacToeLogic {
     type GameError = GameError;
     type PlayerLeaveReason = ();
 
+    fn is_observer_role(&self, role: &Self::PlayerRole) -> bool {
+        *role == PlayerRole::Observer
+    }
+
     fn assign_roles(
         &self,
         players: &PeerMap,
@@ -188,12 +192,22 @@ impl GameLogic for TicTacToeLogic {
 
     fn handle_player_reconnect(
         &self,
-        players: &mut PeerMap,
-        player_id: &EndpointId,
-        current_state: &mut Self::GameState,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
     ) -> std::result::Result<ConnectionEffect, Self::GameError> {
         // TODO add reconnect behaviour.
         Ok(ConnectionEffect::NoChange)
+    }
+
+    fn handle_player_forfeit(
+        &self,
+        _players: &mut PeerMap,
+        player_id: &EndpointId,
+        current_state: &mut Self::GameState,
+    ) -> std::result::Result<ConnectionEffect, Self::GameError> {
+        current_state.roles.insert(*player_id, PlayerRole::Observer);
+        Ok(ConnectionEffect::StateChanged)
     }
 
     fn apply_action(

@@ -95,6 +95,15 @@ impl GameLogic for TestGame {
     ) -> Result<ConnectionEffect, Self::GameError> {
         Ok(ConnectionEffect::NoChange)
     }
+
+    fn handle_player_forfeit(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
+    }
 }
 
 pub async fn await_event(
@@ -281,6 +290,23 @@ pub async fn await_lobby_status_update(
                     return Ok(());
                 }
             }
+        }
+    }
+}
+
+/// Wait until a specific player's observer flag is updated.
+pub async fn await_lobby_observer_update(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    player_id: &EndpointId,
+    expected_observer: bool,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::Peer(players) = event
+            && let Some(player) = players.get(player_id)
+            && player.is_observer == expected_observer
+        {
+            return Ok(());
         }
     }
 }

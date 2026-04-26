@@ -21,7 +21,12 @@ impl<G: GameLogic> StateData<G> {
     /// Declare that this endpoint now has hosting authority.
     pub async fn claim_host(&self) -> Result<()> {
         // TODO improve logic here, we need to check if another online peer already has hosting authority.
-        self.set_bytes(KEY_HOST_ID, self.endpoint_id.to_string().as_bytes())
+        self.set_host(&self.endpoint_id).await
+    }
+
+    /// Declare that a peer now has hosting authority.
+    pub(crate) async fn set_host(&self, peer_id: &EndpointId) -> Result<()> {
+        self.set_bytes(KEY_HOST_ID, peer_id.to_string().as_bytes())
             .await
     }
 
@@ -67,6 +72,19 @@ impl<G: GameLogic> StateData<G> {
         Ok(())
     }
 
+    /// Set a peer's observer flag if they are in the peer list.
+    pub(crate) async fn set_peer_observer(
+        &self,
+        peer_id: &EndpointId,
+        is_observer: bool,
+    ) -> Result<()> {
+        if let Some(mut peer_info) = self.get_peer_info(peer_id).await? {
+            peer_info.is_observer = is_observer;
+            self.update_peer(peer_id, peer_info).await?;
+        }
+        Ok(())
+    }
+
     /// Announce that we have left the room, and why.
     pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
         let quit_key = format!("{}{}", str::from_utf8(PREFIX_QUIT)?, self.endpoint_id);
@@ -75,6 +93,12 @@ impl<G: GameLogic> StateData<G> {
         // allow a short delay for this message to sync
         sleep(Duration::from_secs(1)).await;
         Ok(())
+    }
+
+    /// Announce that this peer has forfeited active play.
+    pub async fn announce_forfeit(&self) -> Result<()> {
+        let reason = LeaveReason::<G>::Forfeit;
+        self.announce_leave(&reason).await
     }
 
     /// Announce that we have joined the room.

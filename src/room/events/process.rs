@@ -1,6 +1,6 @@
 use super::{HostEvent, ui::UiEvent};
 use crate::{
-    AppState, GameLogic, PeerProfile,
+    AppState, ConnectionEffect, GameLogic, PeerMap, PeerProfile, PeerStatus,
     room::{chat::ChatMessage, state::*},
 };
 
@@ -39,6 +39,21 @@ pub async fn process_entry<G: GameLogic>(
         }
         let (node_id, action_id) = action_key?;
         if data.has_processed_action(&node_id, &action_id).await? {
+            return Ok(None);
+        }
+        if data
+            .get_peer_info(&node_id)
+            .await?
+            .is_some_and(|peer| peer.is_observer)
+        {
+            let result = ActionResult {
+                action_id,
+                accepted: false,
+                error: Some("Peer is an observer".to_string()),
+            };
+            data.set_action_result(&node_id, &result).await?;
+            data.mark_action_processed(&node_id, &result.action_id)
+                .await?;
             return Ok(None);
         }
         if !data.peer_author_matches(&node_id, &entry.author()).await? {
@@ -131,19 +146,60 @@ pub async fn process_entry<G: GameLogic>(
         };
     } else if let Some(node_id) = entry.is_quit_request() {
         let node_id = node_id?;
+        let reason = data.parse::<LeaveReason<G>>(entry).await?;
         // If we are processing our own quit request, do nothing.
         // Let other peers handle it.
         if node_id == data.endpoint_id {
+            if matches!(reason, LeaveReason::Forfeit) && data.is_host().await.unwrap_or(false) {
+                process_forfeit(data, logic, &node_id).await?;
+                if let Some(new_host) = data.next_host_candidate(&node_id).await? {
+                    data.set_host(&new_host).await?;
+                }
+            }
             return Ok(None);
         } else if data.is_peer_host(&node_id).await.unwrap_or(false) {
+            if matches!(reason, LeaveReason::Forfeit) {
+                if data.is_host().await.unwrap_or(false) {
+                    process_forfeit(data, logic, &node_id).await?;
+                    if let Some(new_host) = data.next_host_candidate(&node_id).await? {
+                        data.set_host(&new_host).await?;
+                    }
+                }
+                return Ok(None);
+            }
             data.host_offline();
             return Ok(Some(UiEvent::Host(HostEvent::Offline)));
+        } else if data.is_host().await.unwrap_or(false) {
+            if matches!(reason, LeaveReason::Forfeit) {
+                process_forfeit(data, logic, &node_id).await?;
+            } else {
+                data.set_peer_status(&node_id, PeerStatus::Offline).await?;
+            }
         } else {
             return Ok(None); // TODO handle preparing leaver
         }
     }
     // println!("unknown event: {entry:?}");
     Ok(None)
+}
+
+/// Apply standard forfeit behavior and game-specific forfeit hooks.
+async fn process_forfeit<G: GameLogic>(
+    data: &StateData<G>,
+    logic: &Arc<G>,
+    node_id: &EndpointId,
+) -> Result<()> {
+    data.set_peer_observer(node_id, true).await?;
+    let mut current_state = match data.get_game_state().await {
+        Ok(state) => state,
+        Err(_) => return Ok(()),
+    };
+    let mut players = data.get_peer_list().await.unwrap_or_default();
+    if let Some(peer) = players.get_mut(node_id) {
+        peer.is_observer = true;
+    }
+    let effect = logic.handle_player_forfeit(&mut players, node_id, &mut current_state)?;
+    persist_connection_effect(data, &players, &current_state, effect).await
 }
 
 /// Apply a parsed action request and produce an accept/reject result.
@@ -180,4 +236,23 @@ async fn apply_action_request<G: GameLogic>(
             })
         }
     }
+}
+
+/// Persist the state and peer changes requested by a connection hook.
+async fn persist_connection_effect<G: GameLogic>(
+    data: &StateData<G>,
+    players: &PeerMap,
+    current_state: &G::GameState,
+    effect: ConnectionEffect,
+) -> Result<()> {
+    match effect {
+        ConnectionEffect::NoChange => {}
+        ConnectionEffect::StateChanged => data.set_game_state(current_state).await?,
+        ConnectionEffect::PeersChanged => data.persist_peer_list(players).await?,
+        ConnectionEffect::StateAndPeersChanged => {
+            data.persist_peer_list(players).await?;
+            data.set_game_state(current_state).await?;
+        }
+    }
+    Ok(())
 }

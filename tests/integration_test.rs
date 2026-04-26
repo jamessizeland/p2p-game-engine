@@ -74,15 +74,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     host_room.start_game().await?;
 
     // Client should receive a GameStarted and a GameState Updated event.
-    for _ in 0..2 {
-        let event = await_event(&mut client_events).await?;
-        println!("event: {event}");
-        match event {
-            UiEvent::AppState(AppState::InGame) => { /* Good */ }
-            UiEvent::GameState(TestGameState { counter: 0 }) => { /* Good */ }
-            _ => panic!("Client received wrong event type, got: {event}"),
-        }
-    }
+    await_game_start(&mut client_events).await?;
 
     // Query the state directly
     let initial_state = client_room.get_game_state().await?;
@@ -233,6 +225,15 @@ impl GameLogic for StartBlockedGame {
     }
 
     fn handle_player_reconnect(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
+    }
+
+    fn handle_player_forfeit(
         &self,
         _players: &mut PeerMap,
         _player_id: &EndpointId,

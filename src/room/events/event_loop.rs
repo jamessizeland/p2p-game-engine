@@ -42,7 +42,12 @@ impl<G: GameLogic> GameRoom<G> {
                         };
                         match network_event {
                             NetworkEvent::Update(entry) => match process_entry(&entry, &state_data, &logic).await {
-                                Err(e) => eprintln!("Error processing event: {e}"),
+                                Err(e) => eprintln!(
+                                    "Error processing event key='{}' author={} len={}: {e}",
+                                    String::from_utf8_lossy(entry.key()),
+                                    entry.author(),
+                                    entry.content_len()
+                                ),
                                 Ok(None) => {} // No event to send
                                 Ok(Some(event)) => {
                                     // Send the event to the UI
