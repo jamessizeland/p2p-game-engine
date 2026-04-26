@@ -7,5 +7,6 @@ pub use iroh::Iroh;
 pub use logic::{ConnectionEffect, GameLogic};
 pub use peer::{PeerInfo, PeerMap, PeerProfile, PeerStatus};
 pub use room::{
-    ActionResult, AppState, ChatMessage, GameRoom, HostEvent, LeaveReason, UiError, UiEvent,
+    ActionResult, AppState, ChatMessage, GameRoom, HostEvent, LeaveReason, RoomSnapshot, UiError,
+    UiEvent,
 };

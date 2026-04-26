@@ -21,6 +21,7 @@ mod events {
         ui::{UiError, UiEvent},
     };
 }
+mod snapshot;
 mod state;
 
 use crate::{GameLogic, PeerMap};
@@ -36,6 +37,7 @@ use tokio::sync::mpsc;
 
 pub use chat::ChatMessage;
 pub use events::{HostEvent, UiError, UiEvent};
+pub use snapshot::RoomSnapshot;
 pub use state::{ActionResult, AppState, LeaveReason};
 
 /// The main interface for creating and joining game rooms,
@@ -85,14 +87,16 @@ impl<G: GameLogic> GameRoom<G> {
         }
 
         let players: PeerMap = self.get_peer_list().await?;
-        if let Some(peer) = players
-            .values()
-            .find(|peer| peer.status.is_online() && !peer.ready)
-        {
+        let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players)?;
+        if let Some(peer) = players.iter().find_map(|(peer_id, peer)| {
+            roles
+                .get(peer_id)
+                .filter(|role| !self.logic.is_observer_role(role))
+                .filter(|_| !peer.ready)
+                .map(|_| peer)
+        }) {
             return Err(anyhow::anyhow!("Peer {peer} is not ready"));
         }
-
-        let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players)?;
         self.logic.validate_start(&players, &roles)?;
         let initial_state: G::GameState = self.logic.initial_state(&players, &roles)?;
 
