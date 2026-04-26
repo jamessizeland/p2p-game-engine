@@ -59,9 +59,13 @@ impl<G: GameLogic> StateData<G> {
         self.set_bytes(KEY_GAME_STATE, &state).await
     }
 
-    /// Declare that this endpoint now has hosting authority.
-    pub async fn claim_host(&self) -> Result<()> {
-        if let Ok(host_id) = self.get_host_id().await
+    /// Elect a new host when no known online host currently has authority.
+    ///
+    /// This uses the game logic's host eligibility hook and writes the lowest
+    /// eligible endpoint ID, so concurrent claims converge on the same host.
+    pub async fn claim_host(&self, logic: &G) -> Result<()> {
+        let current_host = self.get_host_id().await.ok();
+        if let Some(host_id) = current_host
             && host_id != self.endpoint_id
             && !self.is_host_disconnected()
             && self
@@ -71,7 +75,13 @@ impl<G: GameLogic> StateData<G> {
         {
             return Err(anyhow!("Cannot claim host while current host is online"));
         }
-        self.set_host(&self.endpoint_id).await
+
+        let excluding = current_host.as_ref().filter(|id| **id != self.endpoint_id);
+        let new_host = self
+            .next_host_candidate(logic, excluding)
+            .await?
+            .ok_or_else(|| anyhow!("No eligible host candidate found"))?;
+        self.set_host(&new_host).await
     }
 
     /// Declare that a peer now has hosting authority.
