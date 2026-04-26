@@ -8,14 +8,15 @@ use crate::{GameLogic, PeerMap};
 use anyhow::Result;
 use iroh::EndpointId;
 use iroh_docs::DocTicket;
+use state::StateData;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::{ops::Deref, path::PathBuf};
 use tokio::sync::mpsc;
 
 pub use chat::ChatMessage;
 pub use events::{HostEvent, UiEvent};
-pub use state::{AppState, LeaveReason, StateData};
+pub use state::{ActionResult, AppState, LeaveReason};
 
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
@@ -34,14 +35,6 @@ impl<G: GameLogic> Drop for GameRoom<G> {
     }
 }
 
-impl<G: GameLogic> Deref for GameRoom<G> {
-    type Target = StateData<G>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.state
-    }
-}
-
 impl<G: GameLogic> GameRoom<G> {
     fn new(state: StateData<G>, logic: G) -> Self {
         Self {
@@ -53,7 +46,7 @@ impl<G: GameLogic> GameRoom<G> {
 
     /// Get Iroh Network Endpoint ID
     pub fn id(&self) -> EndpointId {
-        self.endpoint_id
+        self.state.endpoint_id
     }
     /// Get a fresh join ticket for this room, including all known peer addresses.
     pub async fn ticket(&self) -> Result<DocTicket> {
@@ -70,13 +63,13 @@ impl<G: GameLogic> GameRoom<G> {
         }
 
         let players: PeerMap = self.get_peer_list().await?;
-        let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players);
-        let initial_state: G::GameState = self.logic.initial_state(&roles);
-        self.logic.start_conditions_met(&players, &initial_state)?;
+        let roles: HashMap<EndpointId, G::PlayerRole> = self.logic.assign_roles(&players)?;
+        self.logic.validate_start(&players, &roles)?;
+        let initial_state: G::GameState = self.logic.initial_state(&players, &roles)?;
 
         // Broadast the initial game state before setting the game to active.
-        self.set_game_state(&initial_state).await?;
-        self.set_app_state(&AppState::InGame).await?;
+        self.state.set_game_state(&initial_state).await?;
+        self.state.set_app_state(&AppState::InGame).await?;
         Ok(())
     }
 
@@ -110,5 +103,48 @@ impl<G: GameLogic> GameRoom<G> {
         let (event_inbox, event_handle) = room.start_event_loop().await?;
         room.event_handle = Some(event_handle);
         Ok((room, event_inbox))
+    }
+
+    /// Check whether this room instance is the current host.
+    pub async fn is_host(&self) -> Result<bool> {
+        self.state.is_host().await
+    }
+
+    /// Get the current application lifecycle state.
+    pub async fn get_app_state(&self) -> Result<AppState> {
+        self.state.get_app_state().await
+    }
+
+    /// Get the latest host-authored game state.
+    pub async fn get_game_state(&self) -> Result<G::GameState> {
+        self.state.get_game_state().await
+    }
+
+    /// Get the latest known peer list.
+    pub async fn get_peer_list(&self) -> Result<PeerMap> {
+        self.state.get_peer_list().await
+    }
+
+    /// Announce this peer's profile to the room.
+    pub async fn announce_presence(
+        &self,
+        introduction: impl Into<crate::PeerProfile>,
+    ) -> Result<()> {
+        self.state.announce_presence(introduction).await
+    }
+
+    /// Send a chat message to room participants.
+    pub async fn send_chat(&self, message: &str) -> Result<()> {
+        self.state.send_chat(message).await
+    }
+
+    /// Submit a game action for the host to validate and apply.
+    pub async fn submit_action(&self, action: G::GameAction) -> Result<()> {
+        self.state.submit_action(action).await
+    }
+
+    /// Announce that this peer is leaving the room.
+    pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
+        self.state.announce_leave(reason).await
     }
 }

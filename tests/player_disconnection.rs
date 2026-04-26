@@ -58,7 +58,6 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     // --- HOST LEAVES ---
     println!("Host leaving...");
     host_room
-        .to_owned()
         .announce_leave(&LeaveReason::ApplicationClosed)
         .await?;
 
@@ -181,7 +180,7 @@ async fn test_peer_disconnects_during_lobby() -> anyhow::Result<()> {
     // (we never fully remove a peer from the PeerMap once they have been registered)
 
     // --- SETUP PHASE ---
-    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+    let (_host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
 
     // Use a persistent client so we can reconnect with the same ID
     let client_dir = tempfile::tempdir()?;
@@ -254,7 +253,7 @@ async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
     await_lobby_status_update(&mut host_events, &client_id, PeerStatus::Offline).await?;
 
     // --- CLIENT RECONNECTS ---
-    let (client_room, mut client_events) = GameRoom::join(
+    let (client_room, _client_events) = GameRoom::join(
         TestGame,
         &ticket_string,
         Some(client_dir.path().to_path_buf()),
@@ -272,11 +271,7 @@ async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
     // Client should be able to continue playing (submit action)
     client_room.submit_action(TestGameAction::Increment).await?;
 
-    // Host should see the update
-    match await_event(&mut host_events).await? {
-        UiEvent::GameState(TestGameState { counter: 1 }) => {}
-        e => panic!("Host expected GameState update, got {e:?}"),
-    }
+    await_counter_state(&mut host_events, 1).await?;
 
     Ok(())
 }

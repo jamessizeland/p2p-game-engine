@@ -1,7 +1,7 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::{ChatMessage, GameLogic, PeerInfo, PeerProfile, PeerStatus};
+use crate::{ChatMessage, GameLogic, PeerInfo, PeerMap, PeerProfile, PeerStatus};
 use anyhow::Result;
 use tokio::time::sleep;
 
@@ -41,8 +41,13 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Add a peer to the peers list
-    pub async fn insert_peer(&self, peer_id: &EndpointId, profile: PeerProfile) -> Result<()> {
-        let peer_info = PeerInfo::new(*peer_id, profile);
+    pub(crate) async fn insert_peer(
+        &self,
+        peer_id: &EndpointId,
+        author_id: AuthorId,
+        profile: PeerProfile,
+    ) -> Result<()> {
+        let peer_info = PeerInfo::new(*peer_id, author_id, profile);
         self.update_peer(peer_id, peer_info).await
     }
 
@@ -63,7 +68,7 @@ impl<G: GameLogic> StateData<G> {
     }
 
     /// Announce that we have left the room, and why.
-    pub async fn announce_leave(self, reason: &LeaveReason<G>) -> Result<()> {
+    pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
         let quit_key = format!("{}{}", str::from_utf8(PREFIX_QUIT)?, self.endpoint_id);
         let value = postcard::to_stdvec(reason)?;
         self.set_bytes(&quit_key.into_bytes(), &value).await?;
@@ -81,11 +86,52 @@ impl<G: GameLogic> StateData<G> {
 
     /// Submit a game action.
     pub async fn submit_action(&self, action: G::GameAction) -> Result<()> {
-        // Key is "action.id" - this will overwrite previous actions,
-        // which is fine as the host processes them sequentially.
-        let action_key = format!("{}{}", str::from_utf8(PREFIX_ACTION)?, self.endpoint_id);
-        let value = postcard::to_stdvec(&action)?;
+        let action_id = unique_id()?;
+        let action_key = format!(
+            "{}{}.{}",
+            str::from_utf8(PREFIX_ACTION)?,
+            self.endpoint_id,
+            action_id
+        );
+        let value = postcard::to_stdvec(&ActionRequest {
+            id: action_id,
+            action,
+        })?;
         self.set_bytes(&action_key.into_bytes(), &value).await
+    }
+
+    /// Publish the host's accept/reject result for an action request.
+    pub(crate) async fn set_action_result(
+        &self,
+        peer_id: &EndpointId,
+        result: &ActionResult,
+    ) -> Result<()> {
+        let key = format!(
+            "{}{}.{}",
+            str::from_utf8(PREFIX_ACTION_RESULT)?,
+            peer_id,
+            result.action_id
+        );
+        let value = postcard::to_stdvec(result)?;
+        self.set_bytes(key.as_bytes(), &value).await
+    }
+
+    /// Mark an action request as already handled by the host.
+    pub(crate) async fn mark_action_processed(
+        &self,
+        peer_id: &EndpointId,
+        action_id: &str,
+    ) -> Result<()> {
+        let key = processed_action_key(peer_id, action_id)?;
+        self.set_bytes(&key, &[1]).await
+    }
+
+    /// Persist all peer entries from a modified peer map.
+    pub(crate) async fn persist_peer_list(&self, players: &PeerMap) -> Result<()> {
+        for (peer_id, peer_info) in players.iter() {
+            self.update_peer(peer_id, peer_info.clone()).await?;
+        }
+        Ok(())
     }
 }
 
@@ -97,4 +143,21 @@ impl<G: GameLogic> StateData<G> {
             .await?;
         Ok(())
     }
+}
+
+/// Build the document key used to record a processed action.
+pub(crate) fn processed_action_key(peer_id: &EndpointId, action_id: &str) -> Result<Vec<u8>> {
+    Ok(format!(
+        "{}{}.{}",
+        str::from_utf8(PREFIX_PROCESSED_ACTION)?,
+        peer_id,
+        action_id
+    )
+    .into_bytes())
+}
+
+/// Generate a locally unique action identifier.
+fn unique_id() -> Result<String> {
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    Ok(format!("{nanos}"))
 }

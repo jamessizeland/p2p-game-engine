@@ -5,6 +5,14 @@ use std::{collections::HashMap, error::Error, fmt::Debug};
 
 use crate::PeerMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionEffect {
+    NoChange,
+    StateChanged,
+    PeersChanged,
+    StateAndPeersChanged,
+}
+
 /// Generic Trait for p2p turn based games.
 pub trait GameLogic: Debug + Send + Sync + 'static {
     /// Current State of the game
@@ -20,10 +28,24 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     type GameError: Error + Send + Sync;
 
     /// Assigns roles to players at the start of the game.
-    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole>;
+    fn assign_roles(
+        &self,
+        players: &PeerMap,
+    ) -> Result<HashMap<EndpointId, Self::PlayerRole>, Self::GameError>;
+
+    /// Check that all game specific conditions are met for starting this game.
+    fn validate_start(
+        &self,
+        players: &PeerMap,
+        roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<(), Self::GameError>;
 
     /// Creates the initial game state from the lobby info.
-    fn initial_state(&self, roles: &HashMap<EndpointId, Self::PlayerRole>) -> Self::GameState;
+    fn initial_state(
+        &self,
+        players: &PeerMap,
+        roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<Self::GameState, Self::GameError>;
 
     /// The core game logic: validates and applies an action.
     fn apply_action(
@@ -33,20 +55,13 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
         action: &Self::GameAction,
     ) -> Result<(), Self::GameError>;
 
-    /// Check that all game specific conditions are met for starting this game.
-    fn start_conditions_met(
-        &self,
-        players: &PeerMap,
-        current_state: &Self::GameState,
-    ) -> Result<(), Self::GameError>;
-
     /// Deal with a player disconnecting from the game.
     fn handle_player_disconnect(
         &self,
         players: &mut PeerMap,
         player_id: &EndpointId,
         current_state: &mut Self::GameState,
-    ) -> Result<(), Self::GameError>;
+    ) -> Result<ConnectionEffect, Self::GameError>;
 
     // Deal with a player reconnecting to the game.
     fn handle_player_reconnect(
@@ -54,5 +69,5 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
         players: &mut PeerMap,
         player_id: &EndpointId,
         current_state: &mut Self::GameState,
-    ) -> Result<(), Self::GameError>;
+    ) -> Result<ConnectionEffect, Self::GameError>;
 }

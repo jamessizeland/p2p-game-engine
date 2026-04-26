@@ -10,11 +10,12 @@ The idea is that for simple games between friends it is a lot of effort to set u
 
 - [x] **Core Game Logic Abstraction**: A `GameLogic` trait allows developers to plug in their own game rules, state, and actions.
 - [x] **P2P Room Management**: Simple `create` and `join` functions for creating and joining game rooms using `iroh` tickets.
-- [x] **Authoritative Host Model**: The host validates all actions and serves as the single source of truth for game state, preventing cheating.
+- [x] **Host-Authoritative Model**: The host validates actions and publishes canonical game state, with light author checks to reject accidental or misbehaving client state writes.
 - [x] **Lobby System**: Players can join a lobby, and all participants are notified of new arrivals before the game starts.
 - [x] **Dynamic Role Assignment**: The `GameLogic` trait defines how roles (e.g., Player 1, Player 2, Observer) are assigned when the game starts.
 - [x] **Real-time Event Loop**: An async event loop pushes game events (like state changes, new players, or chat messages) to the application.
 - [x] **On-Demand State Queries**: Methods to pull the latest game state, player list, or app status at any time.
 - [x] **Observer Mode**: Supports participants joining mid-game to watch without participating.
-- [ ] **Built-in Chat**: A simple, real-time chat system for all participants.
+- [x] **Built-in Chat**: A simple, real-time chat system for all participants.
+- [x] **Action Results**: Submitted moves receive accept/reject feedback so UIs can explain invalid actions.
 - [ ] **Complete CLI Example**: A fully-functional Tic-Tac-Toe game demonstrates how to use the engine from end to end.

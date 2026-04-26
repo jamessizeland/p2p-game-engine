@@ -31,8 +31,23 @@ const KEY_GAME_STATE: &[u8] = b"game_state";
 const PREFIX_JOIN: &[u8] = b"join_request.";
 const PREFIX_QUIT: &[u8] = b"quit_request.";
 const PREFIX_ACTION: &[u8] = b"action.";
+const PREFIX_ACTION_RESULT: &[u8] = b"action_result.";
+const PREFIX_PROCESSED_ACTION: &[u8] = b"processed_action.";
 const PREFIX_CHAT: &[u8] = b"chat.";
 const PREFIX_PEER: &[u8] = b"peer.";
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ActionRequest<A> {
+    pub id: String,
+    pub action: A,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct ActionResult {
+    pub action_id: String,
+    pub accepted: bool,
+    pub error: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 /// Report a reason for this endpoint leaving a GameRoom
@@ -149,8 +164,10 @@ impl<G: GameLogic> StateData<G> {
 pub trait GameKey {
     /// This entry is an arrival announcement, return the ID of the new arrival.
     fn is_join(&self) -> Option<Result<EndpointId>>;
-    /// This entry is a request to perform an action, return the ID of the requestor.
-    fn is_action_request(&self) -> Option<Result<EndpointId>>;
+    /// This entry is a request to perform an action, return the requestor and action id.
+    fn is_action_request(&self) -> Option<Result<(EndpointId, String)>>;
+    /// This entry is the result of a requested action, return the requestor and action id.
+    fn is_action_result(&self) -> Option<Result<(EndpointId, String)>>;
     /// This entry is a chat message, return the ID of the sender.
     fn is_chat_message(&self) -> Option<Result<EndpointId>>;
     /// This entry is a quit announcement, return the ID of the quitter.
@@ -177,12 +194,21 @@ impl GameKey for Entry {
         let id = String::from_utf8_lossy(&self.key()[PREFIX_JOIN.len()..]);
         Some(endpoint_id_from_str(&id))
     }
-    fn is_action_request(&self) -> Option<Result<EndpointId>> {
+    fn is_action_request(&self) -> Option<Result<(EndpointId, String)>> {
         if !self.key().starts_with(PREFIX_ACTION) {
             return None;
         }
-        let id = String::from_utf8_lossy(&self.key()[PREFIX_ACTION.len()..]);
-        Some(endpoint_id_from_str(&id))
+        Some(parse_endpoint_and_suffix(&String::from_utf8_lossy(
+            &self.key()[PREFIX_ACTION.len()..],
+        )))
+    }
+    fn is_action_result(&self) -> Option<Result<(EndpointId, String)>> {
+        if !self.key().starts_with(PREFIX_ACTION_RESULT) {
+            return None;
+        }
+        Some(parse_endpoint_and_suffix(&String::from_utf8_lossy(
+            &self.key()[PREFIX_ACTION_RESULT.len()..],
+        )))
     }
     fn is_chat_message(&self) -> Option<Result<EndpointId>> {
         if !self.key().starts_with(PREFIX_CHAT) {
@@ -211,4 +237,12 @@ impl GameKey for Entry {
     fn is_host_update(&self) -> bool {
         self.key() == KEY_HOST_ID
     }
+}
+
+/// Parse keys shaped as `<endpoint>.<suffix>`.
+fn parse_endpoint_and_suffix(value: &str) -> Result<(EndpointId, String)> {
+    let Some((id, suffix)) = value.split_once('.') else {
+        return Err(anyhow!("Expected '<endpoint>.<id>', got '{value}'"));
+    };
+    Ok((endpoint_id_from_str(id)?, suffix.to_string()))
 }

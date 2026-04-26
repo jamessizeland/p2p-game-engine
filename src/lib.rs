@@ -4,6 +4,6 @@ mod peer;
 mod room;
 
 pub use iroh::Iroh;
-pub use logic::GameLogic;
+pub use logic::{ConnectionEffect, GameLogic};
 pub use peer::{PeerInfo, PeerMap, PeerProfile, PeerStatus};
-pub use room::{AppState, ChatMessage, GameRoom, HostEvent, LeaveReason, UiEvent};
+pub use room::{ActionResult, AppState, ChatMessage, GameRoom, HostEvent, LeaveReason, UiEvent};
