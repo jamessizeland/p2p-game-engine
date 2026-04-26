@@ -29,13 +29,15 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
     // A "controlled" disconnect is when the host explicitly announces they are leaving.
 
     // --- SETUP PHASE ---
-    let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("peer1").await?;
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("peer1").await?;
 
     // Use two clients to ensure broadcast works
     let (client_room1, mut client_events1) = join_test_room("peer2", &ticket_string, 3).await?;
     let (client_room2, mut client_events2) = join_test_room("peer3", &ticket_string, 3).await?;
 
     // Wait for lobby to be fully populated for all clients
+    await_lobby_ready_update(&mut host_events, &client_room1.id(), true).await?;
+    await_lobby_ready_update(&mut host_events, &client_room2.id(), true).await?;
     await_lobby_update(&mut client_events1, 3).await?;
     await_lobby_update(&mut client_events2, 3).await?;
 
@@ -81,11 +83,12 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     // An "uncontrolled" disconnect is when the host process crashes or is dropped.
 
     // --- SETUP PHASE ---
-    let (host_room, ticket_string, host_id, _host_events) = setup_test_room("peer1").await?;
+    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room("peer1").await?;
 
     let (client_room, mut client_events) = join_test_room("peer2", &ticket_string, 3).await?;
 
     // Wait for lobby to be fully populated
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     // --- GAME START ---
@@ -120,11 +123,13 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     // the game state should enter an inferred pause, preventing other peers from
     // submitting actions until the host reconnects.
     // --- SETUP PHASE ---
-    let host_dir = tempfile::tempdir()?.path().to_path_buf();
-    let (host_room, ticket_string, host_id, _host_events) =
+    let host_temp = tempfile::tempdir()?;
+    let host_dir = host_temp.path().to_path_buf();
+    let (host_room, ticket_string, host_id, mut host_events) =
         setup_persistent_test_room("peer1", host_dir.clone()).await?;
 
     let (client_room, mut client_events) = join_test_room("peer2", &ticket_string, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     assert_eq!(client_room.get_app_state().await?, AppState::Lobby);
@@ -228,6 +233,8 @@ async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
     // Wait for lobby
     await_lobby_update(&mut host_events, 2).await?;
     await_lobby_update(&mut client_events, 2).await?;
+    client_room.set_ready(true).await?;
+    await_lobby_ready_update(&mut host_events, &client_id, true).await?;
 
     // --- GAME START ---
     host_room.start_game().await?;
@@ -272,7 +279,7 @@ async fn test_client_peer_forfeits() -> anyhow::Result<()> {
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
     let client_id = client_room.id();
 
-    await_lobby_update(&mut host_events, 2).await?;
+    await_lobby_ready_update(&mut host_events, &client_id, true).await?;
     await_lobby_update(&mut client_events, 2).await?;
 
     host_room.start_game().await?;
@@ -299,7 +306,8 @@ async fn test_host_forfeits() -> anyhow::Result<()> {
     let (client_room1, mut client_events1) = join_test_room("client1", &ticket_string, 3).await?;
     let (client_room2, mut client_events2) = join_test_room("client2", &ticket_string, 3).await?;
 
-    await_lobby_update(&mut host_events, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room1.id(), true).await?;
+    await_lobby_ready_update(&mut host_events, &client_room2.id(), true).await?;
 
     host_room.start_game().await?;
     await_game_start(&mut client_events1).await?;

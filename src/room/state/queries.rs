@@ -190,16 +190,14 @@ impl<G: GameLogic> StateData<G> {
         let peers = self.get_peer_list().await?;
         let mut candidates: Vec<_> = peers
             .iter()
-            .filter(|(id, peer)| {
-                *id != excluding && peer.status == PeerStatus::Online && !peer.is_observer
-            })
+            .filter(|(id, peer)| *id != excluding && peer.status.is_online() && !peer.is_observer)
             .map(|(id, _)| *id)
             .collect();
         // if no non-observer peers are available, allow observers to be candidates as well
         if candidates.is_empty() {
             candidates = peers
                 .iter()
-                .filter(|(id, peer)| *id != excluding && peer.status == PeerStatus::Online)
+                .filter(|(id, peer)| *id != excluding && peer.status.is_online())
                 .map(|(id, _)| *id)
                 .collect();
         }
