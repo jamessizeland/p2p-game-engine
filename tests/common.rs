@@ -248,6 +248,27 @@ pub async fn await_peer_list_count(
     .await?
 }
 
+pub async fn await_peer_ready(
+    room: &GameRoom<TestGame>,
+    player_id: &EndpointId,
+    expected_ready: bool,
+) -> anyhow::Result<()> {
+    let duration = Duration::from_secs(30);
+    tokio::time::timeout(duration, async {
+        loop {
+            let players = room.get_peer_list().await?;
+            if players
+                .get(player_id)
+                .is_some_and(|player| player.ready == expected_ready)
+            {
+                return Ok(());
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
 /// When a game starts we see two events (in non-deterministic order)
 pub async fn await_game_start(
     events: &mut mpsc::Receiver<UiEvent<TestGame>>,

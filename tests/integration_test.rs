@@ -16,6 +16,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
 
     let client_name = "ClientPlayer";
     let (client_room, mut client_events) = join_test_room(client_name, &ticket_string, 3).await?;
+    await_peer_ready(&host_room, &client_room.id(), true).await?;
 
     // --- LOBBY PHASE ---
     let client_id = client_room.id();
@@ -39,6 +40,13 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Client can also query the state directly
     let app_state = client_room.get_app_state().await?;
     assert!(matches!(app_state, AppState::Lobby));
+    let lobby_snapshot = client_room.snapshot().await?;
+    assert_eq!(lobby_snapshot.local_id, client_room.id());
+    assert_eq!(lobby_snapshot.host_id, Some(host_room.id()));
+    assert!(!lobby_snapshot.is_host);
+    assert_eq!(lobby_snapshot.app_state, AppState::Lobby);
+    assert_eq!(lobby_snapshot.peers.len(), 2);
+    assert!(lobby_snapshot.game_state.is_none());
     println!("Client direct query successful.");
 
     // --- GAME START ---
@@ -53,6 +61,9 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
     // Query the state directly
     let initial_state = client_room.get_game_state().await?;
     assert_eq!(initial_state, TestGameState { counter: 0 });
+    let game_snapshot = client_room.snapshot().await?;
+    assert_eq!(game_snapshot.app_state, AppState::InGame);
+    assert_eq!(game_snapshot.game_state, Some(TestGameState { counter: 0 }));
     println!("Client direct query of initial game state successful.");
 
     // --- ACTION PHASE ---
@@ -133,6 +144,167 @@ async fn test_processed_actions_are_not_replayed_after_host_reconnect() -> anyho
 
     client_room.submit_action(TestGameAction::Increment).await?;
     await_counter_state(&mut client_events, 2).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+struct HostObserverState {
+    started: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum HostObserverAction {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum HostObserverRole {
+    Player,
+    Observer,
+}
+
+#[derive(Debug, Error)]
+enum HostObserverError {
+    #[error("no player")]
+    NoPlayer,
+}
+
+#[derive(Debug, Clone)]
+struct HostObserverGame;
+
+impl GameLogic for HostObserverGame {
+    type GameState = HostObserverState;
+    type GameAction = HostObserverAction;
+    type PlayerRole = HostObserverRole;
+    type PlayerLeaveReason = ();
+    type GameError = HostObserverError;
+
+    fn is_observer_role(&self, role: &Self::PlayerRole) -> bool {
+        matches!(role, HostObserverRole::Observer)
+    }
+
+    fn assign_roles(
+        &self,
+        players: &PeerMap,
+    ) -> Result<HashMap<EndpointId, Self::PlayerRole>, Self::GameError> {
+        Ok(players
+            .iter()
+            .map(|(id, peer)| {
+                let role = if peer.profile.nickname == "player" {
+                    HostObserverRole::Player
+                } else {
+                    HostObserverRole::Observer
+                };
+                (*id, role)
+            })
+            .collect())
+    }
+
+    fn validate_start(
+        &self,
+        _players: &PeerMap,
+        roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<(), Self::GameError> {
+        if roles
+            .values()
+            .any(|role| matches!(role, HostObserverRole::Player))
+        {
+            Ok(())
+        } else {
+            Err(HostObserverError::NoPlayer)
+        }
+    }
+
+    fn initial_state(
+        &self,
+        _players: &PeerMap,
+        _roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<Self::GameState, Self::GameError> {
+        Ok(HostObserverState { started: true })
+    }
+
+    fn apply_action(
+        &self,
+        _current_state: &mut Self::GameState,
+        _player_id: &EndpointId,
+        _action: &Self::GameAction,
+    ) -> Result<(), Self::GameError> {
+        Ok(())
+    }
+
+    fn handle_player_disconnect(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
+    }
+
+    fn handle_player_reconnect(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
+    }
+
+    fn handle_player_forfeit(
+        &self,
+        _players: &mut PeerMap,
+        _player_id: &EndpointId,
+        _current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
+    }
+}
+
+#[tokio::test]
+async fn test_readiness_only_blocks_assigned_players() -> anyhow::Result<()> {
+    let (host_room, mut host_events) = GameRoom::create(HostObserverGame, None).await?;
+    let ticket_string = host_room.ticket().await?.to_string();
+    host_room.announce_presence("host-observer").await?;
+    tokio::time::timeout(std::time::Duration::from_secs(30), host_events.recv()).await?;
+
+    let (player_room, mut player_events) =
+        GameRoom::join(HostObserverGame, &ticket_string, None).await?;
+    player_room.announce_presence("player").await?;
+    tokio::time::timeout(std::time::Duration::from_secs(30), player_events.recv()).await?;
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            if host_room.get_peer_list().await?.len() == 2 {
+                return anyhow::Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await??;
+
+    let result = host_room.start_game().await;
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Peer player is not ready")
+    );
+
+    player_room.set_ready(true).await?;
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        loop {
+            let players = host_room.get_peer_list().await?;
+            if players
+                .get(&player_room.id())
+                .is_some_and(|peer| peer.ready)
+            {
+                return anyhow::Ok(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    })
+    .await??;
+
+    host_room.start_game().await?;
+    assert_eq!(host_room.get_app_state().await?, AppState::InGame);
     Ok(())
 }
 

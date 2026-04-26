@@ -204,7 +204,7 @@ async fn process_quit_entry<G: GameLogic>(
     if node_id == data.endpoint_id {
         if matches!(reason, LeaveReason::Forfeit) && data.is_host().await.unwrap_or_default() {
             process_forfeit(data, logic, &node_id).await?;
-            elect_next_host(data, &node_id).await?;
+            elect_next_host(data, logic, &node_id).await?;
         }
         return Ok(());
     }
@@ -213,7 +213,7 @@ async fn process_quit_entry<G: GameLogic>(
         if matches!(reason, LeaveReason::Forfeit) {
             if data.is_host().await.unwrap_or_default() {
                 process_forfeit(data, logic, &node_id).await?;
-                elect_next_host(data, &node_id).await?;
+                elect_next_host(data, logic, &node_id).await?;
             }
             return Ok(());
         }
@@ -235,9 +235,10 @@ async fn process_quit_entry<G: GameLogic>(
 /// Elect the next available host after a host forfeit.
 async fn elect_next_host<G: GameLogic>(
     data: &StateData<G>,
+    logic: &Arc<G>,
     old_host: &iroh::EndpointId,
 ) -> Result<()> {
-    if let Some(new_host) = data.next_host_candidate(old_host).await? {
+    if let Some(new_host) = data.next_host_candidate(logic, old_host).await? {
         data.set_host(&new_host).await?;
     }
     Ok(())

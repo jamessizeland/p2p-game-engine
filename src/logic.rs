@@ -9,7 +9,7 @@ use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{collections::HashMap, error::Error, fmt::Debug};
 
-use crate::PeerMap;
+use crate::{PeerInfo, PeerMap};
 
 /// The effect of a player connection or disconnection on the game state,
 /// indicating whether the state or peer list has changed.
@@ -42,6 +42,15 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     /// Returns true when a role should be treated as a non-acting observer.
     fn is_observer_role(&self, _role: &Self::PlayerRole) -> bool {
         false
+    }
+
+    /// Returns true when a peer is eligible to become the room host.
+    ///
+    /// The default allows any online peer to host, including observers. Games
+    /// can override this to keep hosting limited to active players, trusted
+    /// peers, or another game-specific policy.
+    fn can_host(&self, peer: &PeerInfo) -> bool {
+        peer.status.is_online()
     }
 
     /// Assigns roles to players at the start of the game.

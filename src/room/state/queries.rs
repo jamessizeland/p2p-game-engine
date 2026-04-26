@@ -185,24 +185,16 @@ impl<G: GameLogic> StateData<G> {
     /// Choose the next online peer that can take over hosting.
     pub(crate) async fn next_host_candidate(
         &self,
+        logic: &G,
         excluding: &EndpointId,
     ) -> Result<Option<EndpointId>> {
         let peers = self.get_peer_list().await?;
         let mut candidates: Vec<_> = peers
             .iter()
-            .filter(|(id, peer)| *id != excluding && peer.status.is_online() && !peer.is_observer)
+            .filter(|(id, peer)| *id != excluding && logic.can_host(peer))
             .map(|(id, _)| *id)
             .collect();
-        // if no non-observer peers are available, allow observers to be candidates as well
-        if candidates.is_empty() {
-            candidates = peers
-                .iter()
-                .filter(|(id, peer)| *id != excluding && peer.status.is_online())
-                .map(|(id, _)| *id)
-                .collect();
-        }
-        // sort candidates by their string representation to ensure deterministic selection of the next host
-        candidates.sort_by_key(|id| id.to_string());
+        candidates.sort();
         Ok(candidates.into_iter().next())
     }
 }

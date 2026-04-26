@@ -315,7 +315,7 @@ async fn test_host_forfeits() -> anyhow::Result<()> {
 
     let expected_host = [client_room1.id(), client_room2.id()]
         .into_iter()
-        .min_by_key(|id| id.to_string())
+        .min()
         .unwrap();
     let expected_name = if expected_host == client_room1.id() {
         "client1"
