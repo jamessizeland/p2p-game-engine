@@ -1,4 +1,11 @@
 //! Game Room
+//!
+//! This module contains the `GameRoom` struct, which is the main interface for creating and joining game rooms,
+//! as well as the main API for interacting with the game state. It also contains submodules for handling chat messages,
+//! processing events, and querying the state.
+//!
+//! The `GameRoom` struct is responsible for managing the game state, processing events, and providing an API for the
+//! UI to interact with the game.
 
 mod chat;
 mod events {
@@ -6,7 +13,10 @@ mod events {
     mod network;
     mod process;
     mod ui;
-    pub use {event_loop::HostEvent, ui::UiEvent};
+    pub use {
+        event_loop::HostEvent,
+        ui::{UiError, UiEvent},
+    };
 }
 mod state;
 
@@ -18,12 +28,15 @@ use state::StateData;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub use chat::ChatMessage;
-pub use events::{HostEvent, UiEvent};
+pub use events::{HostEvent, UiError, UiEvent};
 pub use state::{ActionResult, AppState, LeaveReason};
 
+/// The main interface for creating and joining game rooms,
+/// as well as the main API for interacting with the game state.
 pub struct GameRoom<G: GameLogic> {
     /// Persistent data store
     pub(self) state: Arc<StateData<G>>,
@@ -93,6 +106,9 @@ impl<G: GameLogic> GameRoom<G> {
         let state = StateData::new(store_path, None).await?;
 
         // Host immediately sets the initial lobby state and its own ID.
+        state
+            .set_room_metadata(&state::RoomMetadata::for_game::<G>())
+            .await?;
         state.set_app_state(&AppState::Lobby).await?;
         state.claim_host().await?;
 
@@ -108,8 +124,10 @@ impl<G: GameLogic> GameRoom<G> {
         ticket: &str,
         store_path: Option<PathBuf>,
     ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
-        // TODO establish that this ticket matches the game we expect.
         let state = StateData::new(store_path, Some(ticket.to_string())).await?;
+        state
+            .wait_for_valid_room_metadata(Duration::from_secs(5))
+            .await?;
 
         let mut room = Self::new(state, logic);
         let (event_inbox, event_handle) = room.start_event_loop().await?;

@@ -1,8 +1,22 @@
+//! Queries for reading the current state of the game room from the document.
+//!
+//! This module contains methods for querying the document to read the current state of the game room,
+//! such as the current game state, the list of peers, and the host ID. These queries typically involve
+//! looking up entries with specific keys or key prefixes, and deserializing their content into usable
+//! Rust types.
+//!
+//! For example, the `get_game_state` method looks for the latest entry with the key "game_state"
+//! authored by the host, retrieves its content, and deserializes it into the game state type defined
+//! by the game logic. The `get_peer_list` method looks for all entries with keys that start with "peer.",
+//! retrieves their content, and deserializes them into `PeerInfo` structs to construct the current list
+//! of peers in the room.
+
 use super::*;
-use crate::room::state::actions::processed_action_key;
 use crate::{GameLogic, PeerInfo, PeerMap, PeerStatus};
 use anyhow::Result;
 use n0_future::StreamExt;
+use std::time::Duration;
+use tokio::time::{Instant, sleep};
 
 impl<G: GameLogic> StateData<G> {
     /// Check the document to see if we are the host
@@ -42,6 +56,41 @@ impl<G: GameLogic> StateData<G> {
         }
     }
 
+    /// Get the metadata describing this room's protocol and game type.
+    pub async fn get_room_metadata(&self) -> Result<RoomMetadata> {
+        if let Some(bytes) = self.get_bytes(KEY_ROOM_METADATA).await? {
+            Ok(postcard::from_bytes(&bytes)?)
+        } else {
+            Err(anyhow::anyhow!("No RoomMetadata found"))
+        }
+    }
+
+    /// Wait briefly for room metadata to sync, then validate it.
+    pub async fn wait_for_valid_room_metadata(&self, timeout: Duration) -> Result<()> {
+        let expected = RoomMetadata::for_game::<G>();
+        let deadline = Instant::now() + timeout;
+        loop {
+            match self.get_room_metadata().await {
+                Ok(actual) if actual == expected => return Ok(()),
+                Ok(actual) => {
+                    return Err(anyhow::anyhow!(
+                        "Room metadata mismatch: expected protocol {} game '{}', got protocol {} game '{}'",
+                        expected.protocol_version,
+                        expected.game_type,
+                        actual.protocol_version,
+                        actual.game_type
+                    ));
+                }
+                Err(err) => {
+                    if Instant::now() >= deadline {
+                        return Err(err);
+                    }
+                    sleep(Duration::from_millis(100)).await;
+                }
+            }
+        }
+    }
+
     /// Get Game State.
     pub async fn get_game_state(&self) -> Result<G::GameState> {
         if let Some(bytes) = self.get_host_authored_bytes(KEY_GAME_STATE).await? {
@@ -62,12 +111,12 @@ impl<G: GameLogic> StateData<G> {
             let entry = entry_result?;
             let peer_info: PeerInfo = match self.iroh()?.get_content_as(&entry).await {
                 Ok(info) => info,
-                Err(_) => continue, // TODO is this okay to skip over?
+                Err(_) => continue,
             };
             let key_str = String::from_utf8_lossy(entry.key());
-            let id_str = key_str
-                .strip_prefix(std::str::from_utf8(PREFIX_PEER)?)
-                .expect("Key format should be valid from previous query");
+            let Some(id_str) = key_str.strip_prefix(std::str::from_utf8(PREFIX_PEER)?) else {
+                continue;
+            };
             let Ok(peer_id) = EndpointId::from_str(id_str) else {
                 continue;
             };
@@ -105,7 +154,7 @@ impl<G: GameLogic> StateData<G> {
         action_id: &str,
     ) -> Result<bool> {
         Ok(self
-            .get_bytes(&processed_action_key(peer_id, action_id)?)
+            .get_bytes(&actions::processed_action_key(peer_id, action_id)?)
             .await?
             .is_some())
     }

@@ -1,3 +1,8 @@
+//! Peer Information
+//!
+//! This module contains the `PeerInfo` struct, which contains information about a peer in the game room,
+//! such as their nickname, avatar, and status.
+
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -8,9 +13,12 @@ use iroh::EndpointId;
 use iroh_docs::AuthorId;
 use serde::{Deserialize, Serialize};
 
+/// The status of a peer, indicating whether they are currently online or offline.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PeerStatus {
+    /// The peer is currently connected and active in the game room.
     Online,
+    /// The peer is currently disconnected or inactive in the game room.
     Offline,
 }
 
@@ -32,7 +40,7 @@ impl From<&str> for PeerProfile {
     }
 }
 
-/// General Information about this peer
+/// General Information about this peer, including their ID, profile, and status.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PeerInfo {
     pub id: EndpointId,
@@ -62,6 +70,8 @@ impl PeerInfo {
     }
 }
 
+/// A mapping of peer IDs to their corresponding `PeerInfo`,
+/// representing all the peers currently in the game room.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct PeerMap(HashMap<EndpointId, PeerInfo>);
 

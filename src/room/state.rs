@@ -1,19 +1,30 @@
 //! State information
+//!
+//! This module contains the `StateData` struct, which is the main interface for interacting with the game state.
+//! It also contains the `GameKey` trait, which is used to parse entries in the document and determine what type
+//! of event they represent.
+//!
+//! The `StateData` struct provides methods for setting and getting various pieces of state information, such as the
+//! current app state, game state, room metadata, and peer information. It also provides methods for checking if
+//! certain events have occurred, such as if a peer has joined or quit, if an action has been requested or processed,
+//! and if a chat message has been sent.
 
 mod actions;
+mod game_key;
+mod lifecycle;
+mod metadata;
 mod queries;
 
+use crate::{GameLogic, Iroh};
 use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use iroh::EndpointId;
-use iroh_docs::{
-    AuthorId, DocTicket, Entry,
-    api::{
-        Doc,
-        protocol::{AddrInfoOptions, ShareMode},
-    },
-    store::Query,
+use iroh_docs::api::{
+    Doc,
+    protocol::{AddrInfoOptions, ShareMode},
 };
+use iroh_docs::store::Query;
+use iroh_docs::{AuthorId, DocTicket, Entry};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
     marker::PhantomData,
@@ -22,57 +33,10 @@ use std::{
     sync::{Arc, atomic::AtomicBool},
 };
 
-use crate::{GameLogic, Iroh};
-
-// --- Key Prefixes ---
-const KEY_APP_STATE: &[u8] = b"app_state";
-const KEY_HOST_ID: &[u8] = b"host_id";
-const KEY_GAME_STATE: &[u8] = b"game_state";
-const PREFIX_JOIN: &[u8] = b"join_request.";
-const PREFIX_QUIT: &[u8] = b"quit_request.";
-const PREFIX_ACTION: &[u8] = b"action.";
-const PREFIX_ACTION_RESULT: &[u8] = b"action_result.";
-const PREFIX_PROCESSED_ACTION: &[u8] = b"processed_action.";
-const PREFIX_CHAT: &[u8] = b"chat.";
-const PREFIX_PEER: &[u8] = b"peer.";
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct ActionRequest<A> {
-    pub id: String,
-    pub action: A,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct ActionResult {
-    pub action_id: String,
-    pub accepted: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-/// Report a reason for this endpoint leaving a GameRoom
-pub enum LeaveReason<G: GameLogic> {
-    /// Peer has closed the application.
-    ApplicationClosed,
-    /// Peer has timed out.
-    Timeout,
-    /// Peer has chosen to end their participation in this game.
-    Forfeit,
-    /// Something has gone wrong and an error has been reported.
-    Error(String),
-    /// Something else has happened that is expected.
-    Custom(G::PlayerLeaveReason),
-    /// An unknown error has occurred.
-    Unknown,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Copy)]
-pub enum AppState {
-    Lobby,
-    InGame,
-    Paused,
-    Finished,
-}
+pub use actions::{ActionRequest, ActionResult};
+pub use game_key::GameKey;
+pub use lifecycle::{AppState, LeaveReason};
+pub use metadata::RoomMetadata;
 
 /// Wrapper for the Iroh Document
 #[derive(Clone)]
@@ -87,162 +51,31 @@ pub struct StateData<G: GameLogic> {
     pub(crate) doc: Doc,
 }
 
-impl<G: GameLogic> Drop for StateData<G> {
-    fn drop(&mut self) {
-        if let Some(iroh) = self.iroh.take() {
-            tokio::spawn(async move {
-                iroh.shutdown().await.ok();
-            });
-        }
-    }
-}
-
-impl<G: GameLogic> StateData<G> {
-    /// Ticket option that helps with reconnecting to a ticket instance.
-    const ADDR_OPTIONS: AddrInfoOptions = AddrInfoOptions::RelayAndAddresses;
-
-    /// Create a new StateData instance
-    pub async fn new(store_path: Option<PathBuf>, ticket: Option<String>) -> Result<Self> {
-        let iroh = match store_path {
-            None => Iroh::memory().await?,
-            Some(store_path) => Iroh::persistent(store_path).await?,
-        };
-        let author_id = iroh.docs().author_default().await?;
-        let endpoint_id = iroh.endpoint().id();
-
-        let (_ticket, doc) = if let Some(ticket_str) = ticket {
-            let ticket = DocTicket::from_str(&ticket_str)?;
-            let doc = iroh.docs().import(ticket.clone()).await?;
-            (ticket, doc)
-        } else {
-            let doc = iroh.docs().create().await?;
-            let ticket = doc.share(ShareMode::Write, Self::ADDR_OPTIONS).await?;
-            (ticket, doc)
-        };
-
-        Ok(Self {
-            host_disconnected: Arc::new(AtomicBool::new(false)),
-            phantom: PhantomData,
-            endpoint_id,
-            author_id,
-            // ticket,
-            iroh: Some(iroh),
-            doc,
-        })
-    }
-    pub(crate) fn iroh(&self) -> Result<&Iroh> {
-        self.iroh.as_ref().ok_or(anyhow!("Network layer missing"))
-    }
-
-    /// Convert entry to known data type
-    pub async fn parse<T: DeserializeOwned>(&self, entry: &Entry) -> Result<T> {
-        self.iroh()?.get_content_as(entry).await
-    }
-    /// Set the data into a paused state
-    pub fn host_offline(&self) {
-        self.host_disconnected
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-    /// Set the data into a resumed state
-    pub fn host_online(&self) {
-        self.host_disconnected
-            .store(false, std::sync::atomic::Ordering::Relaxed);
-    }
-    /// Check if the data is in a paused state
-    pub fn is_host_disconnected(&self) -> bool {
-        self.host_disconnected
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
-    /// Regenerate the ticket with the latest node information
-    pub async fn ticket(&self) -> Result<DocTicket> {
-        // Regenerate the ticket to include all current peer addresses.
-        let ticket = self.doc.share(ShareMode::Write, Self::ADDR_OPTIONS).await?;
-        Ok(ticket)
-    }
-}
-
-pub trait GameKey {
-    /// This entry is an arrival announcement, return the ID of the new arrival.
-    fn is_join(&self) -> Option<Result<EndpointId>>;
-    /// This entry is a request to perform an action, return the requestor and action id.
-    fn is_action_request(&self) -> Option<Result<(EndpointId, String)>>;
-    /// This entry is the result of a requested action, return the requestor and action id.
-    fn is_action_result(&self) -> Option<Result<(EndpointId, String)>>;
-    /// This entry is a chat message, return the ID of the sender.
-    fn is_chat_message(&self) -> Option<Result<EndpointId>>;
-    /// This entry is a quit announcement, return the ID of the quitter.
-    fn is_quit_request(&self) -> Option<Result<EndpointId>>;
-    /// A peer entry has been updated
-    fn is_peer_entry(&self) -> bool;
-    /// Game State has updated
-    fn is_game_state_update(&self) -> bool;
-    /// App State has updated
-    fn is_app_state_update(&self) -> bool;
-    /// Host has updated
-    fn is_host_update(&self) -> bool;
-}
-
+/// Convert a string to an EndpointId, returning an error if the string is not a valid EndpointId.
 pub fn endpoint_id_from_str(id: &str) -> Result<EndpointId> {
     EndpointId::from_str(id).map_err(|err| anyhow!("Invalid EndpointId from key {}: {}", id, err))
 }
 
-impl GameKey for Entry {
-    fn is_join(&self) -> Option<Result<EndpointId>> {
-        if !self.key().starts_with(PREFIX_JOIN) {
-            return None;
-        }
-        let id = String::from_utf8_lossy(&self.key()[PREFIX_JOIN.len()..]);
-        Some(endpoint_id_from_str(&id))
-    }
-    fn is_action_request(&self) -> Option<Result<(EndpointId, String)>> {
-        if !self.key().starts_with(PREFIX_ACTION) {
-            return None;
-        }
-        Some(parse_endpoint_and_suffix(&String::from_utf8_lossy(
-            &self.key()[PREFIX_ACTION.len()..],
-        )))
-    }
-    fn is_action_result(&self) -> Option<Result<(EndpointId, String)>> {
-        if !self.key().starts_with(PREFIX_ACTION_RESULT) {
-            return None;
-        }
-        Some(parse_endpoint_and_suffix(&String::from_utf8_lossy(
-            &self.key()[PREFIX_ACTION_RESULT.len()..],
-        )))
-    }
-    fn is_chat_message(&self) -> Option<Result<EndpointId>> {
-        if !self.key().starts_with(PREFIX_CHAT) {
-            return None;
-        }
-        // The key is "chat.<timestamp>.<id>", so we split and take the last part.
-        let key_str = String::from_utf8_lossy(self.key());
-        key_str.split('.').next_back().map(endpoint_id_from_str)
-    }
-    fn is_quit_request(&self) -> Option<Result<EndpointId>> {
-        if !self.key().starts_with(PREFIX_QUIT) {
-            return None;
-        }
-        let id = String::from_utf8_lossy(&self.key()[PREFIX_QUIT.len()..]);
-        Some(endpoint_id_from_str(&id))
-    }
-    fn is_peer_entry(&self) -> bool {
-        self.key().starts_with(PREFIX_PEER)
-    }
-    fn is_game_state_update(&self) -> bool {
-        self.key() == KEY_GAME_STATE
-    }
-    fn is_app_state_update(&self) -> bool {
-        self.key() == KEY_APP_STATE
-    }
-    fn is_host_update(&self) -> bool {
-        self.key() == KEY_HOST_ID
-    }
-}
-
-/// Parse keys shaped as `<endpoint>.<suffix>`.
-fn parse_endpoint_and_suffix(value: &str) -> Result<(EndpointId, String)> {
-    let Some((id, suffix)) = value.split_once('.') else {
-        return Err(anyhow!("Expected '<endpoint>.<id>', got '{value}'"));
-    };
-    Ok((endpoint_id_from_str(id)?, suffix.to_string()))
-}
+// --- Key Prefixes ---
+/// Key for the current AppState, set by the host.
+const KEY_APP_STATE: &[u8] = b"app_state";
+/// Key for the current GameState, set by the host.
+const KEY_HOST_ID: &[u8] = b"host_id";
+/// Key for the current GameState, set by the host.
+const KEY_GAME_STATE: &[u8] = b"game_state";
+/// Key for the room metadata, set by the host.
+const KEY_ROOM_METADATA: &[u8] = b"room_metadata";
+/// Prefix for a peer entry, which contains information about a peer in the room.
+const PREFIX_JOIN: &[u8] = b"join_request.";
+/// Prefix for a peer quit announcement.
+const PREFIX_QUIT: &[u8] = b"quit_request.";
+/// Prefix for an action request entry.
+const PREFIX_ACTION: &[u8] = b"action.";
+/// Prefix for an action result entry, which contains the result of an action request.
+const PREFIX_ACTION_RESULT: &[u8] = b"action_result.";
+/// Prefix for a processed action entry, which contains the result of an action request after it has been processed by the host.
+const PREFIX_PROCESSED_ACTION: &[u8] = b"processed_action.";
+/// Prefix for a chat message entry.
+const PREFIX_CHAT: &[u8] = b"chat.";
+/// Prefix for a peer entry, which contains information about a peer in the room.
+const PREFIX_PEER: &[u8] = b"peer.";

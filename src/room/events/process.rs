@@ -1,3 +1,13 @@
+//! Logic for processing iroh log entries and translating them into game state changes and UI events.
+//!
+//! This module contains the core logic for processing iroh log entries and translating them into game
+//! state changes and UI events. It handles both host-only events (like join requests and action requests)
+//! and all-peers events (like chat messages, peer list updates, and game state updates).
+//!
+//! The main function is `process_entry`, which takes a log entry and the current state data, and produces
+//! an optional UI event to be emitted. The module also includes helper functions for applying action requests,
+//! processing forfeits, and persisting connection effects.
+
 use super::{HostEvent, ui::UiEvent};
 use crate::{
     AppState, ConnectionEffect, GameLogic, PeerMap, PeerProfile, PeerStatus,
@@ -9,6 +19,7 @@ use iroh::EndpointId;
 use iroh_docs::sync::Entry;
 use std::sync::Arc;
 
+/// Process a single iroh log entry and produce an optional UI event to be emitted.
 pub async fn process_entry<G: GameLogic>(
     entry: &Entry,
     data: &StateData<G>,

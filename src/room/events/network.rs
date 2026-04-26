@@ -1,3 +1,9 @@
+//! Logic for processing iroh network events and translating them into UI events.
+//!
+//! This module handles events such as new document entries, neighbor changes, and synchronization results.
+//! The main function is `NetworkEvent::parse`, which takes a live event from the iroh engine and produces
+//! an optional `NetworkEvent` that can be emitted to the UI.
+
 use std::collections::HashMap;
 
 use iroh::EndpointId;
@@ -7,12 +13,18 @@ use iroh_docs::{
     engine::{LiveEvent, SyncEvent},
 };
 
+/// Network events that can be emitted to the UI.
 #[derive(Debug)]
 pub enum NetworkEvent {
+    /// A new document entry is ready to be processed.
     Update(Entry),
+    /// A new peer has joined the room.
     Joiner(EndpointId),
+    /// A peer has left the room.
     Leaver(EndpointId),
+    /// The synchronization process has failed with a reason.
     SyncFailed(String),
+    /// The synchronization process has succeeded.
     SyncSucceeded,
 }
 
