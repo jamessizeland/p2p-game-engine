@@ -19,7 +19,7 @@
 use anyhow::Result;
 use clap::Parser;
 use iroh::EndpointId;
-use p2p_game_engine::{GameLogic, GameRoom, HostEvent, PeerMap, UiEvent};
+use p2p_game_engine::{ConnectionEffect, GameLogic, GameRoom, HostEvent, PeerMap, UiEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -127,7 +127,10 @@ impl GameLogic for TicTacToeLogic {
     type GameError = GameError;
     type PlayerLeaveReason = ();
 
-    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
+    fn assign_roles(
+        &self,
+        players: &PeerMap,
+    ) -> std::result::Result<HashMap<EndpointId, Self::PlayerRole>, Self::GameError> {
         // The first two players become X and O. Everyone else is an observer.
         let mut roles = HashMap::new();
         let mut player_roles = [PlayerRole::X, PlayerRole::O].into_iter();
@@ -142,37 +145,35 @@ impl GameLogic for TicTacToeLogic {
         for player_id in players.keys() {
             roles.entry(*player_id).or_insert(PlayerRole::Observer);
         }
-        roles
+        Ok(roles)
     }
 
-    fn initial_state(&self, roles: &HashMap<EndpointId, Self::PlayerRole>) -> Self::GameState {
+    fn validate_start(
+        &self,
+        _players: &PeerMap,
+        roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> std::result::Result<(), Self::GameError> {
         // Ensure we have both an X and an O before starting.
         let has_x = roles.values().any(|&r| r == PlayerRole::X);
         let has_o = roles.values().any(|&r| r == PlayerRole::O);
 
         if !(has_x && has_o) {
-            // This is a logic error. The host UI should prevent this.
-            panic!("Attempted to start a Tic-Tac-Toe game without two players (X and O).");
+            return Err(GameError::NotEnoughPlayers);
         }
+        Ok(())
+    }
 
-        TicTacToeState {
+    fn initial_state(
+        &self,
+        _players: &PeerMap,
+        roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> std::result::Result<Self::GameState, Self::GameError> {
+        Ok(TicTacToeState {
             board: [Cell::Empty; 9],
             status: GameStatus::Ongoing,
             current_turn: PlayerRole::X, // X always starts
             roles: roles.clone(),
-        }
-    }
-
-    fn start_conditions_met(
-        &self,
-        players: &PeerMap,
-        current_state: &Self::GameState,
-    ) -> std::result::Result<(), Self::GameError> {
-        if players.len() < 2 {
-            Err(GameError::NotEnoughPlayers)
-        } else {
-            Ok(())
-        }
+        })
     }
 
     fn handle_player_disconnect(
@@ -180,9 +181,9 @@ impl GameLogic for TicTacToeLogic {
         players: &mut PeerMap,
         player_id: &EndpointId,
         current_state: &mut Self::GameState,
-    ) -> std::result::Result<(), Self::GameError> {
+    ) -> std::result::Result<ConnectionEffect, Self::GameError> {
         // TODO add disconnect behaviour.
-        Ok(())
+        Ok(ConnectionEffect::NoChange)
     }
 
     fn handle_player_reconnect(
@@ -190,9 +191,9 @@ impl GameLogic for TicTacToeLogic {
         players: &mut PeerMap,
         player_id: &EndpointId,
         current_state: &mut Self::GameState,
-    ) -> std::result::Result<(), Self::GameError> {
+    ) -> std::result::Result<ConnectionEffect, Self::GameError> {
         // TODO add reconnect behaviour.
-        Ok(())
+        Ok(ConnectionEffect::NoChange)
     }
 
     fn apply_action(
@@ -374,6 +375,11 @@ async fn main() -> Result<()> {
                     UiEvent::Chat{sender, msg} => {
                         let from = if msg.from == room.id() { "You".to_string() } else { format!("Player {}", &msg.from.to_string()[..5]) };
                         println!("\n[Chat] {sender}: {}\n{}", msg.message, msg.from);
+                    }
+                    UiEvent::ActionResult(result) => {
+                        if !result.accepted {
+                            eprintln!("\nAction rejected: {}", result.error.unwrap_or_else(|| "unknown error".to_string()));
+                        }
                     }
                     UiEvent::Error(e) => eprintln!("\nAn error occurred: {e}"),
                     UiEvent::AppState(app_state) => {

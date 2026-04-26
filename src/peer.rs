@@ -5,6 +5,7 @@ use std::{
 };
 
 use iroh::EndpointId;
+use iroh_docs::AuthorId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +36,7 @@ impl From<&str> for PeerProfile {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PeerInfo {
     pub id: EndpointId,
+    pub author_id: AuthorId,
     pub profile: PeerProfile,
     pub status: PeerStatus,
     pub ready: bool,
@@ -48,9 +50,10 @@ impl Display for PeerInfo {
 }
 
 impl PeerInfo {
-    pub fn new(id: EndpointId, profile: PeerProfile) -> Self {
+    pub fn new(id: EndpointId, author_id: AuthorId, profile: PeerProfile) -> Self {
         Self {
             id,
+            author_id,
             profile,
             status: PeerStatus::Online,
             ready: false,

@@ -21,6 +21,7 @@ pub struct TestGameState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TestGameAction {
     Increment,
+    Reject,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,15 +39,30 @@ impl GameLogic for TestGame {
     type GameError = TestGameError;
     type PlayerLeaveReason = ();
 
-    fn assign_roles(&self, players: &PeerMap) -> HashMap<EndpointId, Self::PlayerRole> {
-        players
+    fn assign_roles(
+        &self,
+        players: &PeerMap,
+    ) -> Result<HashMap<EndpointId, Self::PlayerRole>, Self::GameError> {
+        Ok(players
             .keys()
             .map(|id| (*id, TestPlayerRole::Counter))
-            .collect()
+            .collect())
     }
 
-    fn initial_state(&self, _players: &HashMap<EndpointId, Self::PlayerRole>) -> Self::GameState {
-        TestGameState { counter: 0 }
+    fn validate_start(
+        &self,
+        _players: &PeerMap,
+        _roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<(), Self::GameError> {
+        Ok(())
+    }
+
+    fn initial_state(
+        &self,
+        _players: &PeerMap,
+        _roles: &HashMap<EndpointId, Self::PlayerRole>,
+    ) -> Result<Self::GameState, Self::GameError> {
+        Ok(TestGameState { counter: 0 })
     }
 
     fn apply_action(
@@ -60,30 +76,24 @@ impl GameLogic for TestGame {
                 current_state.counter += 1;
                 Ok(())
             }
+            TestGameAction::Reject => Err(TestGameError::Unknown),
         }
-    }
-    fn start_conditions_met(
-        &self,
-        _players: &PeerMap,
-        _current_state: &Self::GameState,
-    ) -> Result<(), Self::GameError> {
-        Ok(())
     }
     fn handle_player_disconnect(
         &self,
         _players: &mut PeerMap,
         _player_id: &EndpointId,
         _current_state: &mut Self::GameState,
-    ) -> Result<(), Self::GameError> {
-        Ok(())
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
     }
     fn handle_player_reconnect(
         &self,
         _players: &mut PeerMap,
         _player_id: &EndpointId,
         _current_state: &mut Self::GameState,
-    ) -> Result<(), Self::GameError> {
-        Ok(())
+    ) -> Result<ConnectionEffect, Self::GameError> {
+        Ok(ConnectionEffect::NoChange)
     }
 }
 
@@ -215,7 +225,47 @@ pub async fn await_game_start(
     }
 }
 
-// Add this to tests/common.rs
+pub async fn await_counter_state(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    expected_counter: u32,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::GameState(TestGameState { counter }) = event {
+            if counter == expected_counter {
+                return Ok(());
+            }
+        }
+    }
+}
+
+pub async fn await_action_result(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    accepted: bool,
+) -> anyhow::Result<ActionResult> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::ActionResult(result) = event
+            && result.accepted == accepted
+        {
+            return Ok(result);
+        }
+    }
+}
+
+pub async fn await_host_event(
+    events: &mut mpsc::Receiver<UiEvent<TestGame>>,
+    expected: HostEvent,
+) -> anyhow::Result<()> {
+    loop {
+        let event = await_event(events).await?;
+        if let UiEvent::Host(host_event) = event
+            && host_event == expected
+        {
+            return Ok(());
+        }
+    }
+}
 
 /// Wait until a specific player's status is updated in the lobby
 pub async fn await_lobby_status_update(
