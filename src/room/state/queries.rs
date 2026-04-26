@@ -127,10 +127,36 @@ impl<G: GameLogic> StateData<G> {
         let Ok(host_id) = self.get_host_id().await else {
             return Ok(true);
         };
-        match self.get_peer_info(&host_id).await? {
-            Some(peer) => Ok(&peer.author_id == author_id),
-            None => Ok(true),
+        match self.get_peer_info(&host_id).await {
+            Ok(Some(peer)) => Ok(&peer.author_id == author_id),
+            Ok(None) | Err(_) => Ok(true),
         }
+    }
+
+    /// Choose the next online peer that can take over hosting.
+    pub(crate) async fn next_host_candidate(
+        &self,
+        excluding: &EndpointId,
+    ) -> Result<Option<EndpointId>> {
+        let peers = self.get_peer_list().await?;
+        let mut candidates: Vec<_> = peers
+            .iter()
+            .filter(|(id, peer)| {
+                *id != excluding && peer.status == PeerStatus::Online && !peer.is_observer
+            })
+            .map(|(id, _)| *id)
+            .collect();
+        // if no non-observer peers are available, allow observers to be candidates as well
+        if candidates.is_empty() {
+            candidates = peers
+                .iter()
+                .filter(|(id, peer)| *id != excluding && peer.status == PeerStatus::Online)
+                .map(|(id, _)| *id)
+                .collect();
+        }
+        // sort candidates by their string representation to ensure deterministic selection of the next host
+        candidates.sort_by_key(|id| id.to_string());
+        Ok(candidates.into_iter().next())
     }
 }
 
@@ -168,7 +194,7 @@ impl<G: GameLogic> StateData<G> {
         }
         Ok(match latest {
             Some(entry) => Some(self.iroh()?.get_content_bytes(&entry).await?),
-            None => None,
+            None => self.get_bytes(key).await?,
         })
     }
 
@@ -179,7 +205,9 @@ impl<G: GameLogic> StateData<G> {
         };
         Ok(self
             .get_peer_info(&host_id)
-            .await?
+            .await
+            .ok()
+            .flatten()
             .map(|peer| peer.author_id))
     }
 }

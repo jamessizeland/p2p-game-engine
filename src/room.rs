@@ -73,6 +73,12 @@ impl<G: GameLogic> GameRoom<G> {
         self.logic.validate_start(&players, &roles)?;
         let initial_state: G::GameState = self.logic.initial_state(&players, &roles)?;
 
+        for (peer_id, role) in roles.iter() {
+            self.state
+                .set_peer_observer(peer_id, self.logic.is_observer_role(role))
+                .await?;
+        }
+
         // Broadast the initial game state before setting the game to active.
         self.state.set_game_state(&initial_state).await?;
         self.state.set_app_state(&AppState::InGame).await?;
@@ -149,8 +155,13 @@ impl<G: GameLogic> GameRoom<G> {
         self.state.submit_action(action).await
     }
 
-    /// Announce that this peer is leaving the room.
-    pub async fn announce_leave(&self, reason: &LeaveReason<G>) -> Result<()> {
+    /// Announce that this peer has forfeited active play.
+    pub async fn forfeit(&self) -> Result<()> {
+        self.state.announce_forfeit().await
+    }
+
+    /// Announce that this peer is leaving the room, then drop it.
+    pub async fn announce_leave(self, reason: &LeaveReason<G>) -> Result<()> {
         self.state.announce_leave(reason).await
     }
 }

@@ -27,6 +27,11 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
     /// Errors specific to this game
     type GameError: Error + Send + Sync;
 
+    /// Returns true when a role should be treated as a non-acting observer.
+    fn is_observer_role(&self, _role: &Self::PlayerRole) -> bool {
+        false
+    }
+
     /// Assigns roles to players at the start of the game.
     fn assign_roles(
         &self,
@@ -65,6 +70,14 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
 
     // Deal with a player reconnecting to the game.
     fn handle_player_reconnect(
+        &self,
+        players: &mut PeerMap,
+        player_id: &EndpointId,
+        current_state: &mut Self::GameState,
+    ) -> Result<ConnectionEffect, Self::GameError>;
+
+    /// Deal with a player forfeiting active participation.
+    fn handle_player_forfeit(
         &self,
         players: &mut PeerMap,
         player_id: &EndpointId,

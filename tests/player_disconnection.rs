@@ -61,14 +61,8 @@ async fn test_host_disconnects_during_game_controlled() -> anyhow::Result<()> {
         .announce_leave(&LeaveReason::ApplicationClosed)
         .await?;
 
-    assert!(matches!(
-        await_event(&mut client_events1).await?,
-        UiEvent::Host(HostEvent::Offline)
-    ));
-    assert!(matches!(
-        await_event(&mut client_events2).await?,
-        UiEvent::Host(HostEvent::Offline)
-    ));
+    await_host_event(&mut client_events1, HostEvent::Offline).await?;
+    await_host_event(&mut client_events2, HostEvent::Offline).await?;
 
     {
         let peer_list = get_peer_statuses(&client_room1).await?;
@@ -104,8 +98,7 @@ async fn test_host_disconnects_during_game_uncontrolled() -> anyhow::Result<()> 
     drop(host_room);
 
     // Client should receive an announcement that the host peer has left.
-    let event = await_event(&mut client_events).await?;
-    assert!(matches!(event, UiEvent::Host(HostEvent::Offline)));
+    await_host_event(&mut client_events, HostEvent::Offline).await?;
 
     // Check state directly
     // The app state should report Paused. This is a synthetic state not held in the document.
@@ -145,10 +138,7 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     drop(host_room);
 
     // Client should see the host disconnect.
-    assert!(matches!(
-        await_event(&mut client_events).await?,
-        UiEvent::Host(HostEvent::Offline)
-    ));
+    await_host_event(&mut client_events, HostEvent::Offline).await?;
     println!("Client detected host disconnection.");
 
     assert_eq!(client_room.get_app_state().await?, AppState::Paused);
@@ -164,10 +154,7 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
     println!("Host reconnected successfully and is host.");
 
     // Client should see the host come back online via a NeighborUp event, and unpause their state.
-    assert!(matches!(
-        await_event(&mut client_events).await?,
-        UiEvent::Host(HostEvent::Online)
-    ));
+    await_host_event(&mut client_events, HostEvent::Online).await?;
     assert_eq!(client_room.get_app_state().await?, AppState::InGame);
     println!("Client detected host reconnection and unpaused.");
     Ok(())
@@ -275,21 +262,94 @@ async fn test_peer_disconnects_during_game() -> anyhow::Result<()> {
 
     Ok(())
 }
-#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_client_peer_forfeits() -> anyhow::Result<()> {
     // Non-host peer loses or chooses to forfeit.
     // In this scenario they should be switched to being an observer and can continue
     // to stay subscribed to the game state but no-longer act.
-    todo!()
+
+    let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
+    let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
+    let client_id = client_room.id();
+
+    await_lobby_update(&mut host_events, 2).await?;
+    await_lobby_update(&mut client_events, 2).await?;
+
+    host_room.start_game().await?;
+    await_game_start(&mut client_events).await?;
+
+    client_room.forfeit().await?;
+    await_lobby_observer_update(&mut host_events, &client_id, true).await?;
+
+    client_room.submit_action(TestGameAction::Increment).await?;
+    let result = await_action_result(&mut client_events, false).await?;
+    assert_eq!(result.error.as_deref(), Some("Peer is an observer"));
+
+    Ok(())
 }
 
-#[ignore = "unimplemented"]
 #[tokio::test]
 async fn test_host_forfeits() -> anyhow::Result<()> {
     // During an active game, the hosting peer loses or chooses to forfeit.
     // In this scenario the game should be able to continue without them needing to stay online.
     // They will be switched to being an observer, and will elect a new host to take over if they
     // go offline.
-    todo!()
+
+    let (host_room, ticket_string, host_id, mut host_events) = setup_test_room("host").await?;
+    let (client_room1, mut client_events1) = join_test_room("client1", &ticket_string, 3).await?;
+    let (client_room2, mut client_events2) = join_test_room("client2", &ticket_string, 3).await?;
+
+    await_lobby_update(&mut host_events, 3).await?;
+
+    host_room.start_game().await?;
+    await_game_start(&mut client_events1).await?;
+    await_game_start(&mut client_events2).await?;
+
+    let expected_host = [client_room1.id(), client_room2.id()]
+        .into_iter()
+        .min_by_key(|id| id.to_string())
+        .unwrap();
+    let expected_name = if expected_host == client_room1.id() {
+        "client1"
+    } else {
+        "client2"
+    };
+
+    host_room.forfeit().await?;
+    await_lobby_observer_update(&mut host_events, &host_id, true).await?;
+    await_host_event(
+        &mut client_events1,
+        HostEvent::Changed {
+            to: expected_name.to_string(),
+        },
+    )
+    .await?;
+    await_host_event(
+        &mut client_events2,
+        HostEvent::Changed {
+            to: expected_name.to_string(),
+        },
+    )
+    .await?;
+
+    assert_eq!(
+        client_room1.is_host().await?,
+        expected_host == client_room1.id()
+    );
+    assert_eq!(
+        client_room2.is_host().await?,
+        expected_host == client_room2.id()
+    );
+
+    let new_host_room = if expected_host == client_room1.id() {
+        &client_room1
+    } else {
+        &client_room2
+    };
+    new_host_room
+        .submit_action(TestGameAction::Increment)
+        .await?;
+    await_counter_state(&mut host_events, 1).await?;
+
+    Ok(())
 }
