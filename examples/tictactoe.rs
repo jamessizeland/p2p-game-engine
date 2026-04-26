@@ -138,16 +138,15 @@ impl GameLogic for TicTacToeLogic {
         // The first two players become X and O. Everyone else is an observer.
         let mut roles = HashMap::new();
         let mut player_roles = [PlayerRole::X, PlayerRole::O].into_iter();
+        let mut player_ids: Vec<_> = players.keys().copied().collect();
+        player_ids.sort();
 
-        for (player_id, _player_info) in players.iter() {
+        for player_id in player_ids {
             if let Some(role) = player_roles.next() {
-                roles.insert(*player_id, role);
+                roles.insert(player_id, role);
+            } else {
+                roles.insert(player_id, PlayerRole::Observer);
             }
-        }
-
-        // Assign remaining players as observers
-        for player_id in players.keys() {
-            roles.entry(*player_id).or_insert(PlayerRole::Observer);
         }
         Ok(roles)
     }
@@ -301,7 +300,8 @@ fn print_board(state: &TicTacToeState) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let data_path = tempfile::tempdir()?.path().to_path_buf();
+    let data_dir = tempfile::tempdir()?;
+    let data_path = data_dir.path().to_path_buf();
 
     // --- Setup Room ---
     let (room, mut events) = match cli.command {
@@ -313,8 +313,9 @@ async fn main() -> Result<()> {
             io::stdout().flush()?;
             let mut name = String::new();
             io::stdin().read_line(&mut name)?;
-            room.announce_presence(name.trim()).await?;
-            println!("Welcome {name}! Your role is X. Waiting for player O to join...");
+            room.enter_lobby(name.trim()).await?;
+            println!("Welcome {name}! Waiting for player O to join...");
+            println!("Type 'ready' when you are ready to play.");
             println!("Once player O has joined, type 'start' to begin the game.");
             (room, events)
         }
@@ -325,8 +326,9 @@ async fn main() -> Result<()> {
             io::stdout().flush()?;
             let mut name = String::new();
             io::stdin().read_line(&mut name)?;
-            room.announce_presence(name.trim()).await?;
-            println!("Welcome {name}! Waiting for the host to start the game...");
+            room.enter_lobby(name.trim()).await?;
+            println!("Welcome {name}! Type 'ready' when you are ready to play.");
+            println!("Waiting for the host to start the game...");
             (room, events)
         }
     };
@@ -344,6 +346,18 @@ async fn main() -> Result<()> {
                 let line = String::from_utf8(input.to_vec())?.trim().to_string();
 
                 if line.is_empty() { continue; }
+
+                if line == "ready" {
+                    room.set_ready(true).await?;
+                    println!("You are ready.");
+                    continue;
+                }
+
+                if line == "unready" {
+                    room.set_ready(false).await?;
+                    println!("You are not ready.");
+                    continue;
+                }
 
                 if room.is_host().await? && line == "start" {
                     println!("Starting game...");

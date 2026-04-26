@@ -182,6 +182,15 @@ impl<G: GameLogic> GameRoom<G> {
         self.state.announce_presence(introduction).await
     }
 
+    /// Announce this peer's profile and enter the lobby as not ready.
+    ///
+    /// This is the default lobby path for interactive clients. New peers start
+    /// as not ready, so callers can set readiness later in response to user
+    /// intent or game-specific automation.
+    pub async fn enter_lobby(&self, introduction: impl Into<crate::PeerProfile>) -> Result<()> {
+        self.announce_presence(introduction).await
+    }
+
     /// Update this peer's lobby readiness.
     pub async fn set_ready(&self, ready: bool) -> Result<()> {
         self.state.set_peer_ready(&self.id(), ready).await

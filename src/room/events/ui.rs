@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::{ActionResult, AppState, ChatMessage, GameLogic, HostEvent, PeerMap};
 
-/// UI events that the game room emits to the application layer.
+/// UI error events that the game room emits to the application layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UiError {
     SyncFailed(String),

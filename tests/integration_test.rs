@@ -138,6 +138,26 @@ async fn test_action_submission_is_rejected_in_lobby() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_enter_lobby_defaults_to_not_ready() -> anyhow::Result<()> {
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let (room, mut events) = GameRoom::create(TestGame, None).await?;
+
+    room.enter_lobby("host").await?;
+    let event = await_event(&mut events).await?;
+
+    match event {
+        UiEvent::Peer(players) => {
+            let local_peer = players
+                .get(&room.id())
+                .expect("local peer should be present");
+            assert!(!local_peer.ready);
+        }
+        _ => panic!("Host received wrong event type"),
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_processed_actions_are_not_replayed_after_host_reconnect() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     let host_temp = tempfile::tempdir()?;
