@@ -188,6 +188,46 @@ async fn test_host_disconnects_during_game_and_reconnects() -> anyhow::Result<()
 }
 
 #[tokio::test]
+async fn test_host_reconnect_preserves_active_player_flags() -> anyhow::Result<()> {
+    let _persistent_room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let host_temp = tempfile::tempdir()?;
+    let host_dir = host_temp.path().to_path_buf();
+    let (host_room, ticket_string, host_id, mut host_events) =
+        setup_persistent_test_room("peer1", host_dir.clone()).await?;
+
+    let (client_room, mut client_events) = join_test_room("peer2", &ticket_string, 3).await?;
+    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
+    await_lobby_update(&mut client_events, 2).await?;
+
+    host_room.start_game().await?;
+    await_game_start(&mut client_events).await?;
+
+    host_room
+        .announce_leave(&LeaveReason::ApplicationClosed)
+        .await?;
+    await_host_event(&mut client_events, HostEvent::Offline).await?;
+    assert_eq!(client_room.get_app_state().await?, AppState::Paused);
+
+    let (reconnected_host, mut reconnected_events) =
+        GameRoom::join(TestGame, &ticket_string, Some(host_dir)).await?;
+    reconnected_host.announce_presence("peer1").await?;
+    await_lobby_contains(&mut reconnected_events, &host_id).await?;
+
+    let host_peer = reconnected_host
+        .get_peer_list()
+        .await?
+        .remove(&host_id)
+        .expect("reconnected host should be in peer list");
+    assert!(host_peer.ready);
+    assert!(!host_peer.is_observer);
+    reconnected_host
+        .submit_action(TestGameAction::Increment)
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_offline_host_can_be_replaced_by_claim() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
     let (host_room, ticket_string, _host_id, _host_events) = setup_test_room("host").await?;

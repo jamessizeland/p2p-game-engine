@@ -75,6 +75,18 @@ impl PeerInfo {
             is_observer: true,
         }
     }
+
+    /// Update identity details for a returning peer without resetting game participation flags.
+    pub fn reintroduced(&self, author_id: AuthorId, profile: PeerProfile) -> Self {
+        Self {
+            id: self.id,
+            author_id,
+            profile,
+            status: PeerStatus::Online,
+            ready: self.ready,
+            is_observer: self.is_observer,
+        }
+    }
 }
 
 /// A mapping of peer IDs to their corresponding `PeerInfo`,
