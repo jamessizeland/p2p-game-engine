@@ -68,7 +68,7 @@ impl App {
             if let Some(session) = &mut self.session {
                 session.handle_key(key, self.room_screen).await?;
             }
-            self.handle_room_shortcut(key)?;
+            self.handle_room_shortcut(key).await?;
             if self
                 .session
                 .as_ref()
@@ -110,7 +110,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_room_shortcut(&mut self, key: KeyEvent) -> Result<()> {
+    async fn handle_room_shortcut(&mut self, key: KeyEvent) -> Result<()> {
         match (key.modifiers.contains(KeyModifiers::ALT), key.code) {
             (true, KeyCode::Char('l')) | (_, KeyCode::F(1)) => self.room_screen = RoomScreen::Lobby,
             (true, KeyCode::Char('g')) | (_, KeyCode::F(2)) => self.room_screen = RoomScreen::Game,
@@ -119,26 +119,41 @@ impl App {
                 self.chat_popup = None;
             }
             (true, KeyCode::Char('e')) | (_, KeyCode::F(4)) => self.room_screen = RoomScreen::Logs,
-            (true, KeyCode::Char('c')) | (_, KeyCode::F(9)) => self.copy_ticket()?,
+            (true, KeyCode::Char('c')) | (_, KeyCode::F(9)) => self.copy_ticket().await?,
             _ => {}
         }
         Ok(())
     }
 
-    fn copy_ticket(&mut self) -> Result<()> {
+    async fn copy_ticket(&mut self) -> Result<()> {
         let Some(session) = &mut self.session else {
             return Ok(());
         };
-        let Some(ticket) = session.ticket.clone() else {
-            session.notice("Only the host has a room ticket to copy");
-            return Ok(());
+
+        let ticket = match session.room.ticket().await {
+            Ok(ticket) => ticket.to_string(),
+            Err(err) => {
+                session.notice(format!("Could not refresh room ticket: {err}"));
+                return Ok(());
+            }
         };
-        write_ticket_handoff(&ticket)?;
-        match copy_to_clipboard(&ticket) {
-            Ok(method) => session.notice(format!(
+        session.ticket = Some(ticket.clone());
+
+        let handoff = write_ticket_handoff(&ticket);
+        let clipboard = copy_to_clipboard(&ticket);
+        match (clipboard, handoff) {
+            (Ok(method), Ok(())) => session.notice(format!(
                 "Ticket copied via {method}; also saved for Alt+V/F9 on home"
             )),
-            Err(_) => session.notice("Ticket saved for Alt+V/F9 on home; clipboard unavailable"),
+            (Ok(method), Err(err)) => session.notice(format!(
+                "Ticket copied via {method}; handoff save failed: {err}"
+            )),
+            (Err(_), Ok(())) => {
+                session.notice("Ticket saved for Alt+V/F9 on home; clipboard unavailable")
+            }
+            (Err(clipboard_err), Err(handoff_err)) => session.notice(format!(
+                "Ticket copy failed: {clipboard_err}; handoff save failed: {handoff_err}"
+            )),
         }
         Ok(())
     }

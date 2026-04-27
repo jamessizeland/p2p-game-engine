@@ -78,11 +78,14 @@ pub fn render_peers(frame: &mut Frame<'_>, session: &RoomSession, area: Rect) {
 }
 
 pub fn render_ticket(frame: &mut Frame<'_>, session: &RoomSession, area: Rect) {
-    let ticket = session.ticket.as_deref().unwrap_or("Joined with ticket");
+    let ticket = session
+        .ticket
+        .as_deref()
+        .unwrap_or("Press Alt+C/F9 to copy a fresh room ticket");
     frame.render_widget(
         Paragraph::new(ticket)
             .wrap(Wrap { trim: false })
-            .block(Block::default().title("Ticket").borders(Borders::ALL)),
+            .block(Block::default().title("Share Ticket").borders(Borders::ALL)),
         area,
     );
 }
