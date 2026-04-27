@@ -80,12 +80,12 @@ impl App {
             return Ok(());
         }
 
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
             self.should_quit = true;
             return Ok(());
         }
 
-        if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('v')
+        if key.modifiers == KeyModifiers::ALT && key.code == KeyCode::Char('v')
             || key.code == KeyCode::F(9)
         {
             self.load_ticket_handoff();
@@ -93,7 +93,8 @@ impl App {
         }
 
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::Char('q') if key.modifiers.is_empty() => self.should_quit = true,
+            KeyCode::Esc if key.modifiers.is_empty() => self.should_quit = true,
             KeyCode::Tab | KeyCode::Down => self.home.next_focus(),
             KeyCode::BackTab | KeyCode::Up => self.home.previous_focus(),
             KeyCode::Left => self.home.previous_action(),
@@ -110,8 +111,33 @@ impl App {
         Ok(())
     }
 
+    /// Handle terminal paste as text instead of key-like escape sequences.
+    pub fn handle_paste(&mut self, text: &str) {
+        if let Some(session) = &mut self.session {
+            if self.room_screen == RoomScreen::Chat {
+                session.push_chat_text(text);
+            }
+            return;
+        }
+
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+
+        match self.home.focus {
+            HomeFocus::Name => self.home.username.push_str(text),
+            HomeFocus::Ticket | HomeFocus::Action => {
+                self.home.join_ticket = text.to_string();
+                self.home.focus = HomeFocus::Ticket;
+                self.home.selected_action = HomeAction::Join;
+                self.home.notice = "Pasted ticket. Press Enter to join.".to_string();
+            }
+        }
+    }
+
     async fn handle_room_shortcut(&mut self, key: KeyEvent) -> Result<()> {
-        match (key.modifiers.contains(KeyModifiers::ALT), key.code) {
+        match (key.modifiers == KeyModifiers::ALT, key.code) {
             (true, KeyCode::Char('l')) | (_, KeyCode::F(1)) => self.room_screen = RoomScreen::Lobby,
             (true, KeyCode::Char('g')) | (_, KeyCode::F(2)) => self.room_screen = RoomScreen::Game,
             (true, KeyCode::Char('t')) | (_, KeyCode::F(3)) => {

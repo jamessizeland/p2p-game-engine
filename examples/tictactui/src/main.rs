@@ -19,6 +19,7 @@ mod components {
 
 use anyhow::Result;
 use app::App;
+use input::InputEvent;
 use std::time::Duration;
 
 #[tokio::main]
@@ -44,8 +45,11 @@ async fn run(app: App, terminal: &mut ratatui::DefaultTerminal) -> Result<()> {
         }
 
         tokio::select! {
-            Some(key) = input_rx.recv() => {
-                app.handle_key(key).await?;
+            Some(input) = input_rx.recv() => {
+                match input {
+                    InputEvent::Key(key) => app.handle_key(key).await?,
+                    InputEvent::Paste(text) => app.handle_paste(&text),
+                }
             }
             _ = tick.tick() => {
                 app.drain_room_events().await?;

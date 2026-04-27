@@ -62,12 +62,12 @@ impl RoomSession {
 
     /// Handle an input key while focused on the active room.
     pub async fn handle_key(&mut self, key: KeyEvent, screen: RoomScreen) -> Result<()> {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
             self.should_leave = true;
             return Ok(());
         }
 
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
+        if key.modifiers == KeyModifiers::CONTROL {
             match key.code {
                 KeyCode::Char('q') => self.should_leave = true,
                 _ => {}
@@ -75,7 +75,7 @@ impl RoomSession {
             return Ok(());
         }
 
-        match (key.modifiers.contains(KeyModifiers::ALT), key.code) {
+        match (key.modifiers == KeyModifiers::ALT, key.code) {
             (true, KeyCode::Char('r')) | (_, KeyCode::F(5)) => self.set_ready(true).await?,
             (true, KeyCode::Char('u')) | (_, KeyCode::F(6)) => self.set_ready(false).await?,
             (true, KeyCode::Char('s')) | (_, KeyCode::F(7)) => self.start_game().await?,
@@ -85,7 +85,7 @@ impl RoomSession {
         }
 
         match (screen, key.code) {
-            (_, KeyCode::Esc) => self.should_leave = true,
+            (_, KeyCode::Esc) if key.modifiers.is_empty() => self.should_leave = true,
             (RoomScreen::Game, KeyCode::Left) => self.move_selection(-1, 0),
             (RoomScreen::Game, KeyCode::Right) => self.move_selection(1, 0),
             (RoomScreen::Game, KeyCode::Up) => self.move_selection(0, -1),
@@ -147,6 +147,11 @@ impl RoomSession {
                 AppState::Finished => "Finished".to_string(),
             },
         }
+    }
+
+    /// Append pasted text to the active chat input.
+    pub fn push_chat_text(&mut self, text: &str) {
+        self.chat_input.push_str(text.trim_end());
     }
 
     async fn handle_room_event(
