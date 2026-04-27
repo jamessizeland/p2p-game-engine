@@ -18,4 +18,4 @@ The idea is that for simple games between friends it is a lot of effort to set u
 - [x] **Observer Mode**: Supports participants joining mid-game to watch without participating.
 - [x] **Built-in Chat**: A simple, real-time chat system for all participants.
 - [x] **Action Results**: Submitted moves receive accept/reject feedback so UIs can explain invalid actions.
-- [ ] **Complete CLI Example**: A fully-functional Tic-Tac-Toe game demonstrates how to use the engine from end to end.
+- [x] **Complete CLI Example**: A fully-functional Tic-Tac-Toe game demonstrates how to use the engine from end to end.
