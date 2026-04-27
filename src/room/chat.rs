@@ -33,6 +33,11 @@ impl ChatMessage {
             timestamp,
         })
     }
+
+    /// Whether this message was authored by the given endpoint.
+    pub fn is_from(&self, endpoint_id: &EndpointId) -> bool {
+        self.from == *endpoint_id
+    }
 }
 
 impl Display for ChatMessage {

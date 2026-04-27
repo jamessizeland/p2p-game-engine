@@ -1,4 +1,5 @@
 {
-    "editor.formatOnSave": true,
-    "editor.formatOnSaveMode": "file",
+  "editor.formatOnSave": true,
+  "editor.formatOnSaveMode": "file",
+  "rust-analyzer.linkedProjects": ["./examples/tictactui/Cargo.toml"]
 }

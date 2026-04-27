@@ -112,7 +112,10 @@ impl<G: GameLogic> StateData<G> {
         author_id: AuthorId,
         profile: PeerProfile,
     ) -> Result<()> {
-        let peer_info = PeerInfo::new(*peer_id, author_id, profile);
+        let peer_info = match self.get_peer_info(peer_id).await? {
+            Some(existing) => existing.reintroduced(author_id, profile),
+            None => PeerInfo::new(*peer_id, author_id, profile),
+        };
         self.update_peer(peer_id, peer_info).await
     }
 
