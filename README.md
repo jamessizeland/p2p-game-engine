@@ -22,4 +22,4 @@ The idea is that for simple games between friends it is a lot of effort to set u
 
 ## Example
 
-![example](./examples/tictactui/img/tictactui.webm)
+![example](./examples/tictactui/img/tictactui.gif)
