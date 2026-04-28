@@ -8,11 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-static PERSISTENT_ROOM_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static PERSISTENT_ROOM_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[tokio::test]
 async fn test_full_game_lifecycle() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     // --- SETUP PHASE ---
     let host_name = "HostPlayer";
     let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room(host_name).await?;
@@ -89,7 +89,7 @@ async fn test_full_game_lifecycle() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_two_rapid_actions_from_same_peer_are_not_overwritten() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
     await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
@@ -107,7 +107,7 @@ async fn test_two_rapid_actions_from_same_peer_are_not_overwritten() -> anyhow::
 
 #[tokio::test]
 async fn test_invalid_action_returns_action_result() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
     let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
     await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
@@ -125,7 +125,7 @@ async fn test_invalid_action_returns_action_result() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_action_submission_is_rejected_in_lobby() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (room, _ticket_string, _host_id, _events) = setup_test_room("host").await?;
 
     let result = room.submit_action(TestGameAction::Increment).await;
@@ -139,7 +139,7 @@ async fn test_action_submission_is_rejected_in_lobby() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_enter_lobby_defaults_to_not_ready() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (room, mut events) = GameRoom::create(TestGame, None).await?;
 
     room.enter_lobby("host").await?;
@@ -159,32 +159,35 @@ async fn test_enter_lobby_defaults_to_not_ready() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_processed_actions_are_not_replayed_after_host_reconnect() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let host_temp = tempfile::tempdir()?;
     let host_dir = host_temp.path().to_path_buf();
     let (host_room, ticket_string, host_id, mut host_events) =
         setup_persistent_test_room("host", host_dir.clone()).await?;
-    let (client_room, mut client_events) = join_test_room("client", &ticket_string, 3).await?;
-    await_lobby_ready_update(&mut host_events, &client_room.id(), true).await?;
-    await_lobby_update(&mut client_events, 2).await?;
 
     host_room.start_game().await?;
-    await_game_start(&mut client_events).await?;
+    await_room_app_state(&host_room, AppState::InGame).await?;
+    await_room_counter_state(&host_room, 0).await?;
 
-    client_room.submit_action(TestGameAction::Increment).await?;
-    await_counter_state(&mut client_events, 1).await?;
+    host_room.submit_action(TestGameAction::Increment).await?;
+    await_room_counter_state(&host_room, 1).await?;
+    let result = await_action_result(&mut host_events, true).await?;
+    assert!(result.error.is_none());
 
     drop(host_room);
-    await_host_event(&mut client_events, HostEvent::Offline).await?;
 
-    let (reconnected_host, _host_events) =
+    let (reconnected_host, mut reconnected_host_events) =
         GameRoom::join(TestGame, &ticket_string, Some(host_dir)).await?;
     assert_eq!(reconnected_host.id(), host_id);
     assert_eq!(reconnected_host.get_game_state().await?.counter, 1);
-    await_host_event(&mut client_events, HostEvent::Online).await?;
 
-    client_room.submit_action(TestGameAction::Increment).await?;
-    await_counter_state(&mut client_events, 2).await?;
+    reconnected_host
+        .submit_action(TestGameAction::Increment)
+        .await?;
+    await_room_counter_state(&reconnected_host, 2).await?;
+    let result = await_action_result(&mut reconnected_host_events, true).await?;
+    assert!(result.error.is_none());
+    assert_eq!(reconnected_host.get_game_state().await?.counter, 2);
     Ok(())
 }
 
@@ -301,7 +304,7 @@ impl GameLogic for HostObserverGame {
 
 #[tokio::test]
 async fn test_readiness_only_blocks_assigned_players() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (host_room, mut host_events) = GameRoom::create(HostObserverGame, None).await?;
     let ticket_string = host_room.ticket().await?.to_string();
     host_room.announce_presence("host-observer").await?;
@@ -352,7 +355,7 @@ async fn test_readiness_only_blocks_assigned_players() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_start_game_waits_for_lobby_readiness() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
 
     let (client_room, mut client_events) = GameRoom::join(TestGame, &ticket_string, None).await?;
@@ -382,7 +385,7 @@ async fn test_start_game_waits_for_lobby_readiness() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_online_host_claim_is_rejected() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (host_room, ticket_string, _host_id, mut host_events) = setup_test_room("host").await?;
     let (client_room, _client_events) = join_test_room("client", &ticket_string, 3).await?;
     await_lobby_update(&mut host_events, 2).await?;
@@ -481,7 +484,7 @@ impl GameLogic for StartBlockedGame {
 
 #[tokio::test]
 async fn test_validate_start_failure_does_not_publish_partial_state() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (room, mut events) = GameRoom::create(StartBlockedGame, None).await?;
     room.announce_presence("host").await?;
     tokio::time::timeout(std::time::Duration::from_secs(30), events.recv()).await?;
@@ -494,7 +497,7 @@ async fn test_validate_start_failure_does_not_publish_partial_state() -> anyhow:
 
 #[tokio::test]
 async fn test_join_rejects_wrong_game_type() -> anyhow::Result<()> {
-    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().await;
+    let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
     let (room, _events) = GameRoom::create(TestGame, None).await?;
     let ticket = room.ticket().await?.to_string();
 

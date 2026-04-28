@@ -269,6 +269,38 @@ pub async fn await_peer_ready(
     .await?
 }
 
+pub async fn await_room_app_state(
+    room: &GameRoom<TestGame>,
+    expected_state: AppState,
+) -> anyhow::Result<()> {
+    let duration = Duration::from_secs(30);
+    tokio::time::timeout(duration, async {
+        loop {
+            if room.get_app_state().await? == expected_state {
+                return anyhow::Ok(());
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
+pub async fn await_room_counter_state(
+    room: &GameRoom<TestGame>,
+    expected_counter: u32,
+) -> anyhow::Result<()> {
+    let duration = Duration::from_secs(30);
+    tokio::time::timeout(duration, async {
+        loop {
+            if room.get_game_state().await?.counter == expected_counter {
+                return anyhow::Ok(());
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await?
+}
+
 /// When a game starts we see two events (in non-deterministic order)
 pub async fn await_game_start(
     events: &mut mpsc::Receiver<UiEvent<TestGame>>,
