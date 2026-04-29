@@ -207,7 +207,8 @@ impl App {
     }
 
     async fn open_host(&mut self) -> Result<()> {
-        let (room, events) = GameRoom::create(TicTacToeLogic, Some(self.data_path.clone())).await?;
+        let (room, events) =
+            GameRoom::create(TicTacToeLogic, Some(self.data_path.clone()), None).await?;
         room.enter_lobby(self.home.username.as_str()).await?;
         let ticket = room.ticket().await?.to_string();
         self.home.last_session = Some(LastSession::Host);

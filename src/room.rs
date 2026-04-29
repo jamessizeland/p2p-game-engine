@@ -8,6 +8,7 @@
 //! UI to interact with the game.
 
 mod chat;
+mod ticket;
 mod events {
     mod actions;
     mod connections;
@@ -24,21 +25,21 @@ mod events {
 mod snapshot;
 mod state;
 
-use crate::{GameLogic, PeerMap};
+use crate::{GameLogic, PeerMap, PeerProfile};
 use anyhow::Result;
 use iroh::EndpointId;
-use iroh_docs::DocTicket;
 use state::StateData;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::HashMap, str::FromStr as _};
 use tokio::sync::mpsc;
 
 pub use chat::ChatMessage;
 pub use events::{HostEvent, UiError, UiEvent};
 pub use snapshot::RoomSnapshot;
 pub use state::{ActionResult, AppState, LeaveReason};
+pub use ticket::GameTicket;
 
 /// The main interface for creating and joining game rooms,
 /// as well as the main API for interacting with the game state.
@@ -49,6 +50,8 @@ pub struct GameRoom<G: GameLogic> {
     pub(self) logic: Arc<G>,
     /// UI event loop handle
     pub(self) event_handle: Option<tokio::task::JoinHandle<()>>,
+    /// The name of the game room created by the host, used for display purposes.
+    pub name: String,
 }
 
 impl<G: GameLogic> Drop for GameRoom<G> {
@@ -60,11 +63,12 @@ impl<G: GameLogic> Drop for GameRoom<G> {
 }
 
 impl<G: GameLogic> GameRoom<G> {
-    fn new(state: StateData<G>, logic: G) -> Self {
+    fn new(state: StateData<G>, logic: G, name: &str) -> Self {
         Self {
             state: Arc::new(state),
             logic: Arc::new(logic),
             event_handle: None,
+            name: name.to_string(),
         }
     }
 
@@ -73,8 +77,11 @@ impl<G: GameLogic> GameRoom<G> {
         self.state.endpoint_id
     }
     /// Get a fresh join ticket for this room, including all known peer addresses.
-    pub async fn ticket(&self) -> Result<DocTicket> {
-        self.state.ticket().await
+    pub async fn ticket(&self) -> Result<GameTicket> {
+        Ok(GameTicket {
+            doc_ticket: self.state.ticket().await?,
+            room_id: self.name.clone(),
+        })
     }
 
     /// Start the Game
@@ -116,6 +123,7 @@ impl<G: GameLogic> GameRoom<G> {
     pub async fn create(
         logic: G,
         store_path: Option<PathBuf>,
+        name: Option<&str>,
     ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
         let state = StateData::new(store_path, None).await?;
 
@@ -126,7 +134,7 @@ impl<G: GameLogic> GameRoom<G> {
         state.set_app_state(&AppState::Lobby).await?;
         state.set_host(&state.endpoint_id).await?;
 
-        let mut room = Self::new(state, logic);
+        let mut room = Self::new(state, logic, name.unwrap_or_else(|| G::GAME_NAME));
         let (event_inbox, event_handle) = room.start_event_loop().await?;
         room.event_handle = Some(event_handle);
         Ok((room, event_inbox))
@@ -138,12 +146,14 @@ impl<G: GameLogic> GameRoom<G> {
         ticket: &str,
         store_path: Option<PathBuf>,
     ) -> Result<(Self, mpsc::Receiver<UiEvent<G>>)> {
-        let state = StateData::new(store_path, Some(ticket.to_string())).await?;
+        let ticket = GameTicket::from_str(ticket)?;
+        let room_name = ticket.room_id.clone();
+        let state = StateData::new(store_path, Some(ticket)).await?;
         state
             .wait_for_valid_room_metadata(Duration::from_secs(5))
             .await?;
 
-        let mut room = Self::new(state, logic);
+        let mut room = Self::new(state, logic, &room_name);
         let (event_inbox, event_handle) = room.start_event_loop().await?;
         room.event_handle = Some(event_handle);
         Ok((room, event_inbox))
@@ -175,10 +185,7 @@ impl<G: GameLogic> GameRoom<G> {
     }
 
     /// Announce this peer's profile to the room.
-    pub async fn announce_presence(
-        &self,
-        introduction: impl Into<crate::PeerProfile>,
-    ) -> Result<()> {
+    pub async fn announce_presence<I: Into<PeerProfile>>(&self, introduction: I) -> Result<()> {
         self.state.announce_presence(introduction).await
     }
 
@@ -187,7 +194,7 @@ impl<G: GameLogic> GameRoom<G> {
     /// This is the default lobby path for interactive clients. New peers start
     /// as not ready, so callers can set readiness later in response to user
     /// intent or game-specific automation.
-    pub async fn enter_lobby(&self, introduction: impl Into<crate::PeerProfile>) -> Result<()> {
+    pub async fn enter_lobby<I: Into<PeerProfile>>(&self, introduction: I) -> Result<()> {
         self.announce_presence(introduction).await
     }
 

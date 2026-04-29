@@ -2,7 +2,7 @@
 //! including player actions, game state, and lifecycle events.
 
 use super::*;
-use crate::GameLogic;
+use crate::{GameLogic, GameTicket};
 use anyhow::Result;
 
 /// Report a reason for this endpoint leaving a GameRoom
@@ -54,7 +54,7 @@ impl<G: GameLogic> StateData<G> {
     const ADDR_OPTIONS: AddrInfoOptions = AddrInfoOptions::RelayAndAddresses;
 
     /// Create a new StateData instance
-    pub async fn new(store_path: Option<PathBuf>, ticket: Option<String>) -> Result<Self> {
+    pub async fn new(store_path: Option<PathBuf>, ticket: Option<GameTicket>) -> Result<Self> {
         let iroh = match store_path {
             None => Iroh::memory().await?,
             Some(store_path) => Iroh::persistent(store_path).await?,
@@ -62,14 +62,9 @@ impl<G: GameLogic> StateData<G> {
         let author_id = iroh.docs().author_default().await?;
         let endpoint_id = iroh.endpoint().id();
 
-        let (_ticket, doc) = if let Some(ticket_str) = ticket {
-            let ticket = DocTicket::from_str(&ticket_str)?;
-            let doc = iroh.docs().import(ticket.clone()).await?;
-            (ticket, doc)
-        } else {
-            let doc = iroh.docs().create().await?;
-            let ticket = doc.share(ShareMode::Write, Self::ADDR_OPTIONS).await?;
-            (ticket, doc)
+        let doc = match ticket {
+            None => iroh.docs().create().await?,
+            Some(game_ticket) => iroh.docs().import(game_ticket.doc_ticket).await?,
         };
 
         Ok(Self {

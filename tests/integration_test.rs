@@ -140,7 +140,7 @@ async fn test_action_submission_is_rejected_in_lobby() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_enter_lobby_defaults_to_not_ready() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
-    let (room, mut events) = GameRoom::create(TestGame, None).await?;
+    let (room, mut events) = GameRoom::create(TestGame, None, None).await?;
 
     room.enter_lobby("host").await?;
     let event = await_event(&mut events).await?;
@@ -215,6 +215,7 @@ enum HostObserverError {
 struct HostObserverGame;
 
 impl GameLogic for HostObserverGame {
+    const GAME_NAME: &'static str = "HostObserverGame";
     type GameState = HostObserverState;
     type GameAction = HostObserverAction;
     type PlayerRole = HostObserverRole;
@@ -305,7 +306,7 @@ impl GameLogic for HostObserverGame {
 #[tokio::test]
 async fn test_readiness_only_blocks_assigned_players() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
-    let (host_room, mut host_events) = GameRoom::create(HostObserverGame, None).await?;
+    let (host_room, mut host_events) = GameRoom::create(HostObserverGame, None, None).await?;
     let ticket_string = host_room.ticket().await?.to_string();
     host_room.announce_presence("host-observer").await?;
     tokio::time::timeout(std::time::Duration::from_secs(30), host_events.recv()).await?;
@@ -416,6 +417,7 @@ enum StartBlockedRole {}
 struct StartBlockedGame;
 
 impl GameLogic for StartBlockedGame {
+    const GAME_NAME: &'static str = "StartBlockedGame";
     type GameState = StartBlockedState;
     type GameAction = StartBlockedAction;
     type PlayerRole = StartBlockedRole;
@@ -485,7 +487,7 @@ impl GameLogic for StartBlockedGame {
 #[tokio::test]
 async fn test_validate_start_failure_does_not_publish_partial_state() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
-    let (room, mut events) = GameRoom::create(StartBlockedGame, None).await?;
+    let (room, mut events) = GameRoom::create(StartBlockedGame, None, None).await?;
     room.announce_presence("host").await?;
     tokio::time::timeout(std::time::Duration::from_secs(30), events.recv()).await?;
 
@@ -498,7 +500,7 @@ async fn test_validate_start_failure_does_not_publish_partial_state() -> anyhow:
 #[tokio::test]
 async fn test_join_rejects_wrong_game_type() -> anyhow::Result<()> {
     let _room_guard = PERSISTENT_ROOM_TEST_LOCK.lock().unwrap();
-    let (room, _events) = GameRoom::create(TestGame, None).await?;
+    let (room, _events) = GameRoom::create(TestGame, None, None).await?;
     let ticket = room.ticket().await?.to_string();
 
     let result = GameRoom::join(StartBlockedGame, &ticket, None).await;

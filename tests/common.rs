@@ -33,6 +33,7 @@ pub enum TestPlayerRole {
 pub struct TestGame;
 
 impl GameLogic for TestGame {
+    const GAME_NAME: &'static str = "TestGame";
     type GameState = TestGameState;
     type GameAction = TestGameAction;
     type PlayerRole = TestPlayerRole;
@@ -125,7 +126,7 @@ pub async fn setup_test_room(
     mpsc::Receiver<UiEvent<TestGame>>,
 )> {
     println!("Setting up Host Room");
-    let (host_room, mut host_events) = GameRoom::create(TestGame, None).await?;
+    let (host_room, mut host_events) = GameRoom::create(TestGame, None, None).await?;
     let ticket_string = host_room.ticket().await?.to_string();
     println!("Host Ticket: {}", &ticket_string);
 
@@ -156,7 +157,7 @@ pub async fn setup_persistent_test_room(
     mpsc::Receiver<UiEvent<TestGame>>,
 )> {
     println!("Setting up Persistent Host Room");
-    let (host_room, mut host_events) = GameRoom::create(TestGame, Some(path)).await?;
+    let (host_room, mut host_events) = GameRoom::create(TestGame, Some(path), None).await?;
     let ticket_string = host_room.ticket().await?.to_string();
     println!("Host Ticket: {}", &ticket_string);
 
