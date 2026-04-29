@@ -35,7 +35,6 @@ use serde::de::DeserializeOwned;
 pub struct Iroh {
     router: Router,
     blobs: Blobs,
-    path: Option<PathBuf>,
     docs: Docs,
 }
 
@@ -46,7 +45,6 @@ impl Iroh {
         store: Store,
         docs: Docs,
         gossip: Gossip,
-        path: Option<PathBuf>,
     ) -> Result<Self> {
         // Get the generic client interface
         let blobs = store.blobs().clone();
@@ -58,7 +56,6 @@ impl Iroh {
         Ok(Self {
             router,
             docs,
-            path,
             blobs,
         })
     }
@@ -80,7 +77,7 @@ impl Iroh {
             .spawn(endpoint.clone(), blobs_store.clone(), gossip.clone())
             .await?;
 
-        Self::build(endpoint, blobs_store, docs, gossip, None).await
+        Self::build(endpoint, blobs_store, docs, gossip).await
     }
 
     /// Create a Persistent Iroh Node (For the actual App)
@@ -102,12 +99,7 @@ impl Iroh {
             .spawn(endpoint.clone(), blobs_store.clone(), gossip.clone())
             .await?;
 
-        Self::build(endpoint, blobs_store, docs, gossip, Some(path)).await
-    }
-
-    /// Get the persistent data store path, or None if we ware using In Memory mode.
-    pub fn path(&self) -> Option<&PathBuf> {
-        self.path.as_ref()
+        Self::build(endpoint, blobs_store, docs, gossip).await
     }
 
     /// Get the latest state of the requested entry as raw bytes

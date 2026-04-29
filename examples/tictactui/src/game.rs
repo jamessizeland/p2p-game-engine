@@ -85,6 +85,7 @@ pub enum GameError {
 pub struct TicTacToeLogic;
 
 impl GameLogic for TicTacToeLogic {
+    const GAME_NAME: &'static str = "Tic Tac Toe";
     type GameState = TicTacToeState;
     type GameAction = TicTacToeAction;
     type PlayerRole = PlayerRole;

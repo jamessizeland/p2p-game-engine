@@ -7,7 +7,11 @@
 
 use iroh::EndpointId;
 use serde::{Serialize, de::DeserializeOwned};
-use std::{collections::HashMap, error::Error, fmt::Debug};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 use crate::{PeerInfo, PeerMap};
 
@@ -27,6 +31,8 @@ pub enum ConnectionEffect {
 
 /// Generic Trait for p2p turn based games.
 pub trait GameLogic: Debug + Send + Sync + 'static {
+    /// The name of the game, used for display and routing purposes.
+    const GAME_NAME: &'static str;
     /// Current State of the game
     type GameState: Serialize + DeserializeOwned + Clone + Debug + Send + Sync;
     /// Actions that can be taken in the game
@@ -104,4 +110,9 @@ pub trait GameLogic: Debug + Send + Sync + 'static {
         player_id: &EndpointId,
         current_state: &mut Self::GameState,
     ) -> Result<ConnectionEffect, Self::GameError>;
+
+    /// Get a preview of the game state for a specific player, if supported by this game.
+    fn get_preview<P: Display>(&self) -> Option<P> {
+        None
+    }
 }
