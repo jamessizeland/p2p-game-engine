@@ -13,6 +13,7 @@ pub use room::{
     RoomSnapshot, UiError, UiEvent,
 };
 
+#[cfg(feature = "iroh")]
 pub mod iroh {
     //! Re-exports of the Iroh library, including the main `Iroh` struct for interacting with the network,
     //! as well as the `DocTicket` struct for working with documents in the Docs protocol.
