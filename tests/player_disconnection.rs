@@ -11,9 +11,7 @@
 //! - host sets their status to Offline.
 
 mod common;
-
 use common::*;
-use p2p_game_engine::*;
 
 static PERSISTENT_ROOM_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 

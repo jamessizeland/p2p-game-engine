@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use iroh::EndpointId;
-use p2p_game_engine::*;
+pub use p2p_game_engine::iroh::EndpointId;
+pub use p2p_game_engine::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 use thiserror::Error;

@@ -2,8 +2,6 @@
 
 mod common;
 use common::*;
-use iroh::EndpointId;
-use p2p_game_engine::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
