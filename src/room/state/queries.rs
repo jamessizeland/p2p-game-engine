@@ -12,7 +12,7 @@
 //! of peers in the room.
 
 use super::*;
-use crate::{GameLogic, PeerInfo, PeerMap, PeerStatus};
+use crate::{ChatMessage, GameLogic, PeerInfo, PeerMap, PeerStatus};
 use anyhow::Result;
 use n0_future::StreamExt;
 use std::time::Duration;
@@ -145,6 +145,25 @@ impl<G: GameLogic> StateData<G> {
     pub async fn get_peer_name(&self, peer_id: &EndpointId) -> Result<String> {
         let peer_info = self.get_peer_info(peer_id).await?;
         Ok(peer_info.map_or("unknown".to_string(), |peer| peer.profile.nickname))
+    }
+
+    /// Get persisted chat messages for this room, ordered oldest to newest.
+    pub async fn get_chat_history(&self) -> Result<Vec<ChatMessage>> {
+        let query = self
+            .doc
+            .get_many(Query::single_latest_per_key().key_prefix(PREFIX_CHAT));
+        let mut entries = Box::pin(query.await?);
+        let mut messages = Vec::new();
+        while let Some(entry_result) = entries.next().await {
+            let entry = entry_result?;
+            let message = match self.iroh()?.get_content_as::<ChatMessage>(&entry).await {
+                Ok(message) => message,
+                Err(_) => continue,
+            };
+            messages.push(message);
+        }
+        messages.sort_by_key(|message| message.timestamp);
+        Ok(messages)
     }
 
     /// Check whether an action request has already been processed.

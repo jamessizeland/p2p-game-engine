@@ -208,6 +208,11 @@ impl<G: GameLogic> GameRoom<G> {
         self.state.send_chat(message).await
     }
 
+    /// Get persisted chat messages for this room, ordered oldest to newest.
+    pub async fn get_chat_history(&self) -> Result<Vec<ChatMessage>> {
+        self.state.get_chat_history().await
+    }
+
     /// Submit a game action for the host to validate and apply.
     ///
     /// This performs local lifecycle checks before publishing the request so UI

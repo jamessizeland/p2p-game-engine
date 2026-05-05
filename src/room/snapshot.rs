@@ -1,6 +1,6 @@
 //! Read-only room snapshots for UI redraws.
 
-use crate::{AppState, GameLogic, GameRoom, PeerMap};
+use crate::{AppState, ChatMessage, GameLogic, GameRoom, PeerMap};
 use anyhow::Result;
 use iroh::EndpointId;
 
@@ -26,6 +26,8 @@ pub struct RoomSnapshot<G: GameLogic> {
     pub peers: PeerMap,
     /// The latest host-authored game state, if one has been published.
     pub game_state: Option<G::GameState>,
+    /// Persisted room chat messages, ordered oldest to newest.
+    pub chat_history: Vec<ChatMessage>,
 }
 
 impl<G: GameLogic> GameRoom<G> {
@@ -39,6 +41,7 @@ impl<G: GameLogic> GameRoom<G> {
             app_state: self.get_app_state().await?,
             peers: self.get_peer_list().await?,
             game_state: self.get_game_state().await.ok(),
+            chat_history: self.get_chat_history().await?,
         })
     }
 }
